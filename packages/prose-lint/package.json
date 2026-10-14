@@ -1,0 +1,44 @@
+{
+  "name": "@ryusenkei/prose-lint",
+  "version": "0.1.0",
+  "description": "リポの中の日本語の文章（コメント・Markdown・コミットメッセージ）の文体の検査",
+  "license": "MIT",
+  "author": "RYUSENKEI",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ryusenkei-inc/toolkit.git",
+    "directory": "packages/prose-lint"
+  },
+  "homepage": "https://github.com/ryusenkei-inc/toolkit/tree/main/packages/prose-lint",
+  "type": "module",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "bin": {
+    "prose-lint": "dist/cli.js"
+  },
+  "files": [
+    "dist",
+    "golden"
+  ],
+  "engines": {
+    "node": ">=24"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "prepublishOnly": "pnpm run build",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.1",
+    "typescript": "^5.9.3"
+  }
+}

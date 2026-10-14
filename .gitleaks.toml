@@ -1,0 +1,11 @@
+# gitleaks の設定。既定の規則に加え、公開してよい既知の値を除外
+title = "toolkit"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "公開してよい雛形（秘密値ではない）"
+paths = [
+  '''.*\.example$''',
+]
