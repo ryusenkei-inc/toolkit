@@ -6,8 +6,9 @@
 
 - 構成: パッケージの一覧は README の「Packages」
 - エントリポイント: パッケージごとに `src/index.ts`。export は外部で使用するものだけ・他パッケージの再 export なし
-- 公開: npm の public。パッケージに入るのは `dist` のみ
+- 公開: npm の public。パッケージに入るのは `package.json` の `files` のみ（ビルドするパッケージは `dist`）
   - 秘密値・個人名・特定のリポ固有の値を含めない
+- `packages/conventions` の `rules.md`・`files/`: 利用側のリポの規約・共通ファイル。このリポの作業には適用しない
 - YAML の拡張子: `.yaml`（pnpm のファイルと統一）
 - バージョン: semver。互換性のない変更は major を上げる（利用側は `^` で依存）
 - 個人名: リポに記載禁止（コード・コメント・ドキュメント・設定値・`package.json` の `author` すべて）
