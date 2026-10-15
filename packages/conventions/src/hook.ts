@@ -2,7 +2,7 @@
 // Claude Code の hook（`.claude/settings.json` から `node` で直接実行）
 // - PreToolUse: 規約に反するツールの実行を拒否 → 終了コード2・理由は stderr
 // - Stop: 変更があれば `pnpm lint`・`pnpm test` を実行し、失敗時は完了を差し戻し
-// - hook 自体の失敗は終了コード1（拒否にしない → 作業を止めない）
+// - hook 自体の失敗は終了コード1（拒否にしない → 作業を継続）
 import { spawnSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
