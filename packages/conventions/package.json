@@ -1,7 +1,7 @@
 {
   "name": "@ryusenkei/conventions",
   "version": "0.1.0",
-  "description": "RYUSENKEI のモノリポで共有する Claude Code の規約",
+  "description": "RYUSENKEI のモノリポの共通の規約（Claude Code の規約・hook、共通ファイルの同期）",
   "license": "MIT",
   "author": "RYUSENKEI",
   "repository": {
@@ -10,11 +10,39 @@
     "directory": "packages/conventions"
   },
   "homepage": "https://github.com/ryusenkei-inc/toolkit/tree/main/packages/conventions",
+  "type": "module",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "bin": {
+    "ryusenkei-conventions": "dist/cli.js"
+  },
   "files": [
+    "dist",
+    "files",
     "rules.md"
   ],
+  "engines": {
+    "node": ">=24"
+  },
   "publishConfig": {
     "access": "public",
     "provenance": true
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "prepublishOnly": "pnpm run build",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@ryusenkei/prose-lint": "workspace:^"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.1",
+    "typescript": "^5.9.3"
   }
 }

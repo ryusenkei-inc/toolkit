@@ -7,7 +7,7 @@ Shared packages for RYUSENKEI repositories, published to npm under `@ryusenkei`.
 | Package | Description |
 | --- | --- |
 | [`@ryusenkei/prose-lint`](packages/prose-lint) | Style checker for Japanese technical writing (comments, Markdown, commit messages) |
-| [`@ryusenkei/conventions`](packages/conventions) | Shared Claude Code conventions, imported from each repository's `CLAUDE.md` |
+| [`@ryusenkei/conventions`](packages/conventions) | Shared conventions: Claude Code rules and hooks, and sync of the shared files |
 
 ## Development
 
