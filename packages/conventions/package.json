@@ -1,6 +1,6 @@
 {
   "name": "@ryusenkei/conventions",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "RYUSENKEI のモノリポの共通の規約（Claude Code の規約・hook、共通ファイルの同期）",
   "license": "MIT",
   "author": "RYUSENKEI",
