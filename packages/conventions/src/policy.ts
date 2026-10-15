@@ -11,7 +11,7 @@ export type ToolUse = { tool_name: string; tool_input: Record<string, unknown>; 
 export type Context = {
   /** PR のタイトルの指摘（なければ空配列） */
   titleIssues: (title: string) => string[];
-  /** ファイルの内容（読めなければ `undefined`） */
+  /** ファイルの内容（読み込みの失敗時は `undefined`） */
   readFile: (path: string) => string | undefined;
 };
 
@@ -26,7 +26,7 @@ const AI_NOTE = /generated (with|by) \[?(claude|chatgpt|copilot|gemini|codex|cur
 // `git branch` の作成以外の操作
 const BRANCH_QUERY = ['-d', '-D', '--delete', '-l', '--list', '-a', '-r', '--all', '--remotes', '-v', '-vv', '--verbose', '--show-current', '--contains', '--no-contains', '--merged', '--no-merged', '-u', '--set-upstream-to', '--unset-upstream', '--edit-description'];
 
-/** 拒否の理由。許可する場合は `undefined` */
+/** 拒否の理由（許可する場合は `undefined`） */
 export function denyReason(use: ToolUse, ctx: Context): string | undefined {
   if (EDIT_TOOLS.includes(use.tool_name)) {
     const path = String(use.tool_input.file_path ?? use.tool_input.notebook_path ?? '');
@@ -62,7 +62,7 @@ function gitReasons([sub, ...args]: string[]): string[] {
   return [];
 }
 
-// 作成・改名するブランチの名前
+// 作成・リネームするブランチの名前
 function newBranch(sub: string | undefined, args: string[]): string | undefined {
   const positionals = args.filter((a) => !a.startsWith('-'));
   switch (sub) {

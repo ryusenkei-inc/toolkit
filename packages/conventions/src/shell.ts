@@ -1,6 +1,6 @@
 // シェルのコマンド文字列の簡易な分解（hook の判定用）
 // - 区切り: `&&`・`||`・`;`・`|`・`&`・改行 → コマンドごとの語の配列
-// - 解釈: 引用符（`'`・`"`）とバックスラッシュ。変数・コマンド置換は展開しない
+// - 解釈: 引用符（`'`・`"`）とバックスラッシュ → 変数・コマンド置換は展開しない
 // - 先頭の `NAME=value`（環境変数の指定）は除去
 
 /** コマンド文字列をコマンドごとの語の配列に分解 */
@@ -53,7 +53,7 @@ export function commands(line: string): string[][] {
   return out;
 }
 
-/** オプションの値（`--name value`・`--name=value`・`-n value`）。指定がなければ `undefined` */
+/** オプションの値（`--name value`・`--name=value`・`-n value`）→ 指定がなければ `undefined` */
 export function option(words: string[], names: string[]): string | undefined {
   for (let i = 0; i < words.length; i++) {
     const w = words[i]!;

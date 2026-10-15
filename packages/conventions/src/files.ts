@@ -1,4 +1,4 @@
-// 利用側のリポの共通ファイルの同期・検査
+// 利用側のリポにある共通ファイルの同期・検査
 // - マスタ: パッケージの `files/`（npm は `.gitignore` を同梱しない → 先頭の `.` を除いた名前で格納）
 // - 比較は改行コードを LF に正規化（Windows の作業ツリーは CRLF になりうる）
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
@@ -16,7 +16,7 @@ const FILES: { from: string; to: string; mode?: number }[] = [
 ];
 const SETTINGS = '.claude/settings.json';
 const WORKSPACE = 'pnpm-workspace.yaml';
-/** CLAUDE.md の共通の規約の import */
+/** CLAUDE.md で共通の規約を読み込む import */
 export const IMPORT = '@node_modules/@ryusenkei/conventions/rules.md';
 // `.github/dependabot.yaml` の `cooldown` と同値
 const RELEASE_AGE = [
@@ -26,7 +26,7 @@ const RELEASE_AGE = [
   '  - "@ryusenkei/*"',
 ];
 
-/** 差分のあるファイル。`expected` が `undefined` = 自動で修正できない（`message` に対処） */
+/** 差分のあるファイル（`expected` が `undefined` = 自動で修正できない → `message` に対処） */
 export type Drift = { path: string; expected?: string; message: string };
 
 const lf = (s: string) => s.replaceAll('\r\n', '\n');
