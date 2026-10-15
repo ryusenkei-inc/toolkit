@@ -1,0 +1,20 @@
+{
+  "name": "@ryusenkei/conventions",
+  "version": "0.1.0",
+  "description": "RYUSENKEI のモノリポで共有する Claude Code の規約",
+  "license": "MIT",
+  "author": "RYUSENKEI",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ryusenkei-inc/toolkit.git",
+    "directory": "packages/conventions"
+  },
+  "homepage": "https://github.com/ryusenkei-inc/toolkit/tree/main/packages/conventions",
+  "files": [
+    "rules.md"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  }
+}

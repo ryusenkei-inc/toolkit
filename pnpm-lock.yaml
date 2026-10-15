@@ -18,6 +18,8 @@ importers:
         specifier: ^5.0.1
         version: 5.0.3(@types/node@26.6.4)(vite@8.3.2(@types/node@26.6.4))
 
+  packages/conventions: {}
+
   packages/prose-lint:
     devDependencies:
       '@types/node':
