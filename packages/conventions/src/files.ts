@@ -13,6 +13,7 @@ const FILES: { from: string; to: string; mode?: number }[] = [
   { from: 'mise.toml', to: 'mise.toml' },
   { from: 'dependabot.yaml', to: '.github/dependabot.yaml' },
   { from: 'commit-msg', to: '.githooks/commit-msg', mode: 0o755 },
+  { from: 'pre-push', to: '.githooks/pre-push', mode: 0o755 },
 ];
 const SETTINGS = '.claude/settings.json';
 const WORKSPACE = 'pnpm-workspace.yaml';
