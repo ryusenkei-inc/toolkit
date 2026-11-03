@@ -22,6 +22,8 @@ export type Context = {
   currentBranch: (cwd: string | undefined) => string | undefined;
   /** PR の head のブランチ（`pr` の省略時は現在のブランチの PR） */
   prHead: (pr: string | undefined, cwd: string | undefined) => string | undefined;
+  /** PR の base のブランチ（`pr` の省略時は現在のブランチの PR） */
+  prBase: (pr: string | undefined, cwd: string | undefined) => string | undefined;
   /** PR のチェックの集計（`pr` の省略時は現在のブランチの PR） */
   prChecks: (pr: string | undefined, cwd: string | undefined) => Checks;
 };
@@ -198,10 +200,17 @@ function prReasons(sub: string | undefined, args: string[], cwd: string | undefi
 }
 
 // `--auto` も対象（必須のチェックがないリポでは即時にマージされる）
+// - epic のフローの dev/* への PR: チェックなしを許可（CI を実行せず pre-push の `pnpm check` が関門）
 function mergeReasons(args: string[], cwd: string | undefined, ctx: Context): string[] {
   if (args.some((a) => a === '--merge' || a === '--rebase' || a === '-m' || a === '-r')) return ['マージは squash のみ（`--squash`）'];
-  const checks = ctx.prChecks(positionals(args, MERGE_VALUE)[0], cwd);
-  return checks === 'pass' ? [] : [CHECKS_REASON[checks]];
+  const pr = positionals(args, MERGE_VALUE)[0];
+  const checks = ctx.prChecks(pr, cwd);
+  if (checks === 'pass') return [];
+  if (checks === 'none' && epicFlow(ctx)) {
+    const base = ctx.prBase(pr, cwd);
+    if (base !== undefined && DEV_BRANCH.test(base)) return [];
+  }
+  return [CHECKS_REASON[checks]];
 }
 
 // epic のフロー: main への PR は dev/* から、それ以外のブランチの PR は dev/* へ
