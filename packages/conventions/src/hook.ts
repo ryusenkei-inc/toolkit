@@ -8,7 +8,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { denyReason, type ToolUse } from './policy.ts';
+import { denyReason, type Checks, type ToolUse } from './policy.ts';
 
 type Input = ToolUse & { hook_event_name: string; stop_hook_active?: boolean };
 
@@ -18,7 +18,7 @@ const root = process.env.CLAUDE_PROJECT_DIR ?? input.cwd ?? process.cwd();
 const shell = process.platform === 'win32';
 
 if (input.hook_event_name === 'PreToolUse') {
-  const reason = denyReason(input, { titleIssues, readFile });
+  const reason = denyReason(input, { root, titleIssues, readFile, currentBranch, prHead, prChecks });
   if (reason) {
     process.stderr.write(`${reason}\n`);
     process.exit(2);
@@ -47,6 +47,32 @@ function readFile(path: string): string | undefined {
   } catch {
     return undefined;
   }
+}
+
+function currentBranch(cwd: string | undefined): string | undefined {
+  const r = spawnSync('git', ['branch', '--show-current'], { cwd: cwd ?? root, encoding: 'utf8' });
+  return (r.status === 0 && r.stdout.trim()) || undefined;
+}
+
+function prHead(pr: string | undefined, cwd: string | undefined): string | undefined {
+  const r = spawnSync('gh', ['pr', 'view', ...(pr ? [pr] : []), '--json', 'headRefName', '--jq', '.headRefName'], { cwd: cwd ?? root, encoding: 'utf8' });
+  return (r.status === 0 && r.stdout.trim()) || undefined;
+}
+
+// `gh pr checks` は実行中・失敗で終了コードが0以外（8・1）→ 終了コードではなく出力で判定
+function prChecks(pr: string | undefined, cwd: string | undefined): Checks {
+  const r = spawnSync('gh', ['pr', 'checks', ...(pr ? [pr] : []), '--json', 'bucket'], { cwd: cwd ?? root, encoding: 'utf8' });
+  let buckets: string[];
+  try {
+    buckets = (JSON.parse(r.stdout) as { bucket: string }[]).map((c) => c.bucket);
+  } catch {
+    return /no checks reported/i.test(r.stderr ?? '') ? 'none' : 'unknown';
+  }
+  if (buckets.some((b) => b === 'fail' || b === 'cancel')) return 'fail';
+  if (buckets.some((b) => b === 'pending')) return 'pending';
+  // すべてスキップ = 成功したチェックがない
+  if (!buckets.includes('pass')) return 'none';
+  return buckets.every((b) => b === 'pass' || b === 'skipping') ? 'pass' : 'unknown';
 }
 
 // 差し戻しは1回まで（`stop_hook_active` = 差し戻し後の再実行）→ 解消できない失敗で停止しない状態を防止

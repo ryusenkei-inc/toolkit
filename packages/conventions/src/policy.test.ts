@@ -1,11 +1,20 @@
 import { describe, expect, it } from 'vitest';
-import { denyReason, type Context } from './policy.ts';
+import { denyReason, type Checks, type Context } from './policy.ts';
 
-const ctx: Context = {
+const context = (o: { branch?: string; checks?: Checks; epic?: boolean } = {}): Context => ({
+  root: '/repo',
   titleIssues: (title) => (/^[a-z]+(\([a-z]+\))?: /.test(title) ? [] : ['Conventional Commits の書式']),
-  readFile: (path) => (path.endsWith('body.md') ? '## 背景\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n' : undefined),
-};
-const bash = (command: string) => denyReason({ tool_name: 'Bash', tool_input: { command }, cwd: '/repo' }, ctx);
+  readFile: (path) => {
+    if (path.endsWith('body.md')) return '## 背景\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n';
+    if (o.epic && path.replaceAll('\\', '/') === '/repo/package.json') return JSON.stringify({ ryusenkei: { flow: 'epic' } });
+    return undefined;
+  },
+  currentBranch: () => o.branch ?? 'feat/x',
+  prHead: (pr) => (pr === '7' ? 'dev/12-search' : (o.branch ?? 'feat/x')),
+  prChecks: () => o.checks ?? 'pass',
+});
+const ctx = context();
+const bash = (command: string, c = ctx) => denyReason({ tool_name: 'Bash', tool_input: { command }, cwd: '/repo' }, c);
 
 describe('パッケージ管理', () => {
   it('npm の変更・yarn を拒否', () => {
@@ -28,7 +37,33 @@ describe('git', () => {
   });
   it('git push -n・git commit --amend は許可', () => {
     expect(bash('git push -n')).toBeUndefined();
-    expect(bash('git commit --amend -am "feat: x"')).toBeUndefined();
+    expect(bash('git commit --amend -m "feat: x"')).toBeUndefined();
+  });
+  it('一括の add を拒否', () => {
+    for (const c of ['git add -A', 'git add --all', 'git add .', 'git add -- .', 'git add -u', 'git add --update', 'git add -Av', 'git commit -a -m "feat: x"', 'git commit -am "feat: x"', 'git commit --all -m x']) {
+      expect(bash(c), c).toMatch('パスで指定して add');
+    }
+  });
+  it('パスを指定した add・メッセージ中の -a は許可', () => {
+    expect(bash('git add src/a.ts README.md')).toBeUndefined();
+    expect(bash('git add -p src/a.ts')).toBeUndefined();
+    expect(bash('git commit -m "-a"')).toBeUndefined();
+    expect(bash('git commit -F msg.txt')).toBeUndefined();
+  });
+  it('main・master への force push を拒否', () => {
+    expect(bash('git push --force origin main')).toMatch('force push');
+    expect(bash('git push -f origin HEAD:master')).toMatch('force push');
+    expect(bash('git push --force-with-lease origin main')).toMatch('ユーザーに');
+    expect(bash('git push origin +main')).toMatch('force push');
+    expect(bash('git push -fu origin refs/heads/main')).toMatch('force push');
+    expect(bash('git push --force --all')).toMatch('force push');
+    expect(bash('git push -f', context({ branch: 'main' }))).toMatch('force push');
+  });
+  it('作業ブランチへの force push・main への通常の push は許可', () => {
+    expect(bash('git push --force-with-lease origin feat/x')).toBeUndefined();
+    expect(bash('git push -f')).toBeUndefined();
+    expect(bash('git push origin main')).toBeUndefined();
+    expect(bash('git push -u origin HEAD')).toBeUndefined();
   });
   it('ブランチ名の検査', () => {
     expect(bash('git switch -c feature-x')).toMatch('<type>/<内容>');
@@ -58,6 +93,46 @@ describe('PR', () => {
   it('squash 以外のマージを拒否', () => {
     expect(bash('gh pr merge 3 --merge')).toMatch('squash');
     expect(bash('gh pr merge 3 --squash --delete-branch')).toBeUndefined();
+  });
+  it('CI の成功を確認できない PR のマージを拒否', () => {
+    expect(bash('gh pr merge 3 --squash', context({ checks: 'fail' }))).toMatch('失敗');
+    expect(bash('gh pr merge --squash --auto', context({ checks: 'pending' }))).toMatch('実行中');
+    expect(bash('gh pr merge 3 --squash', context({ checks: 'none' }))).toMatch('チェックがない');
+    expect(bash('gh pr merge 3 --squash', context({ checks: 'unknown' }))).toMatch('取得できない');
+  });
+  it('マージの対象の PR を判定に渡す', () => {
+    const seen: (string | undefined)[] = [];
+    const c = { ...ctx, prChecks: (pr: string | undefined) => (seen.push(pr), 'pass' as const) };
+    bash('gh pr merge -t "feat: x" 12 --squash', c);
+    bash('gh pr merge --squash', c);
+    expect(seen).toEqual(['12', undefined]);
+  });
+});
+
+describe('epic のフロー', () => {
+  const epic = (branch = 'feat/x') => context({ epic: true, branch });
+  it('opt-in なしは従来どおり', () => {
+    expect(bash('git switch -c dev/12-search')).toMatch('<type>/<内容>');
+    expect(bash('gh pr create -t "feat: x" -b y')).toBeUndefined();
+  });
+  it('dev/<issue>-<内容> のブランチを許可', () => {
+    expect(bash('git switch -c dev/12-search', epic())).toBeUndefined();
+    expect(bash('git switch -c dev/search', epic())).toMatch('dev/<issue の番号>-<内容>');
+  });
+  it('main への PR は dev/* からのみ', () => {
+    expect(bash('gh pr create -t "feat: x" -b y', epic())).toMatch('`main` への PR');
+    expect(bash('gh pr create -t "feat: x" -b y --base main', epic())).toMatch('`main` への PR');
+    expect(bash('gh pr create -t "feat: x" -b y', epic('dev/12-search'))).toBeUndefined();
+    expect(bash('gh pr create -t "feat: x" -b y -B main -H dev/12-search', epic())).toBeUndefined();
+  });
+  it('dev/* 以外のブランチの PR は dev/* へ', () => {
+    expect(bash('gh pr create -t "feat: x" -b y -B dev/12-search', epic())).toBeUndefined();
+    expect(bash('gh pr create -t "feat: x" -b y -B release', epic())).toMatch('PR の base');
+  });
+  it('gh pr edit は base の変更のみ検査', () => {
+    expect(bash('gh pr edit 3 --body x', epic())).toBeUndefined();
+    expect(bash('gh pr edit 3 --base main', epic())).toMatch('`main` への PR');
+    expect(bash('gh pr edit 7 --base main', epic())).toBeUndefined();
   });
 });
 
