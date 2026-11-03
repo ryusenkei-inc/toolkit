@@ -18,7 +18,7 @@ const root = process.env.CLAUDE_PROJECT_DIR ?? input.cwd ?? process.cwd();
 const shell = process.platform === 'win32';
 
 if (input.hook_event_name === 'PreToolUse') {
-  const reason = denyReason(input, { root, titleIssues, readFile, currentBranch, prHead, prChecks });
+  const reason = denyReason(input, { root, titleIssues, readFile, currentBranch, prHead, prBase, prChecks });
   if (reason) {
     process.stderr.write(`${reason}\n`);
     process.exit(2);
@@ -56,6 +56,11 @@ function currentBranch(cwd: string | undefined): string | undefined {
 
 function prHead(pr: string | undefined, cwd: string | undefined): string | undefined {
   const r = spawnSync('gh', ['pr', 'view', ...(pr ? [pr] : []), '--json', 'headRefName', '--jq', '.headRefName'], { cwd: cwd ?? root, encoding: 'utf8' });
+  return (r.status === 0 && r.stdout.trim()) || undefined;
+}
+
+function prBase(pr: string | undefined, cwd: string | undefined): string | undefined {
+  const r = spawnSync('gh', ['pr', 'view', ...(pr ? [pr] : []), '--json', 'baseRefName', '--jq', '.baseRefName'], { cwd: cwd ?? root, encoding: 'utf8' });
   return (r.status === 0 && r.stdout.trim()) || undefined;
 }
 

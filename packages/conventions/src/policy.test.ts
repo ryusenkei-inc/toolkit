@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { denyReason, type Checks, type Context } from './policy.ts';
 
-const context = (o: { branch?: string; checks?: Checks; epic?: boolean } = {}): Context => ({
+const context = (o: { branch?: string; checks?: Checks; epic?: boolean; base?: string } = {}): Context => ({
   root: '/repo',
   titleIssues: (title) => (/^[a-z]+(\([a-z]+\))?: /.test(title) ? [] : ['Conventional Commits の書式']),
   readFile: (path) => {
@@ -11,6 +11,7 @@ const context = (o: { branch?: string; checks?: Checks; epic?: boolean } = {}): 
   },
   currentBranch: () => o.branch ?? 'feat/x',
   prHead: (pr) => (pr === '7' ? 'dev/12-search' : (o.branch ?? 'feat/x')),
+  prBase: () => o.base ?? 'main',
   prChecks: () => o.checks ?? 'pass',
 });
 const ctx = context();
@@ -128,6 +129,27 @@ describe('epic のフロー', () => {
   it('dev/* 以外のブランチの PR は dev/* へ', () => {
     expect(bash('gh pr create -t "feat: x" -b y -B dev/12-search', epic())).toBeUndefined();
     expect(bash('gh pr create -t "feat: x" -b y -B release', epic())).toMatch('PR の base');
+  });
+  it('dev/* への PR はチェックなしでマージを許可', () => {
+    expect(bash('gh pr merge 3 --squash', context({ epic: true, checks: 'none', base: 'dev/12-search' }))).toBeUndefined();
+    expect(bash('gh pr merge --squash --auto', context({ epic: true, checks: 'none', base: 'dev/12-search' }))).toBeUndefined();
+  });
+  it('dev/* への PR もチェックがあれば成功が必要', () => {
+    expect(bash('gh pr merge 3 --squash', context({ epic: true, checks: 'pending', base: 'dev/12-search' }))).toMatch('実行中');
+    expect(bash('gh pr merge 3 --squash', context({ epic: true, checks: 'fail', base: 'dev/12-search' }))).toMatch('失敗');
+    expect(bash('gh pr merge 3 --squash', context({ epic: true, checks: 'unknown', base: 'dev/12-search' }))).toMatch('取得できない');
+  });
+  it('main への PR・opt-in なし・base の取得の失敗はチェックなしを拒否', () => {
+    expect(bash('gh pr merge 3 --squash', context({ epic: true, checks: 'none', base: 'main' }))).toMatch('チェックがない');
+    expect(bash('gh pr merge 3 --squash', context({ checks: 'none', base: 'dev/12-search' }))).toMatch('チェックがない');
+    const unknownBase = { ...context({ epic: true, checks: 'none' }), prBase: () => undefined };
+    expect(bash('gh pr merge 3 --squash', unknownBase)).toMatch('チェックがない');
+  });
+  it('base の判定にマージの対象の PR を渡す', () => {
+    const seen: (string | undefined)[] = [];
+    const c = { ...context({ epic: true, checks: 'none' }), prBase: (pr: string | undefined) => (seen.push(pr), 'dev/12-search') };
+    expect(bash('gh pr merge 12 --squash', c)).toBeUndefined();
+    expect(seen).toEqual(['12']);
   });
   it('gh pr edit は base の変更のみ検査', () => {
     expect(bash('gh pr edit 3 --body x', epic())).toBeUndefined();
