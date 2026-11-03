@@ -6,7 +6,7 @@
 - TypeScript: ビルドせず Node で直接実行（`node scripts/x.ts`）
 - テスト: Vitest。対象と同じディレクトリに `*.test.ts`
 - 子プロセス: `scripts/lib/exec.ts` の `exec`（Windows の `.cmd` に対応）
-- 依存の更新: Dependabot の PR で実施
+- 依存の更新: Dependabot の PR で実施（月1回・自動の rebase なし → マージの前に手で rebase）
 
 ## 設定・秘密値
 
@@ -31,9 +31,15 @@
 - ドメインの概念・説明・表示文字列は日本語
 - 文体の指摘（`prose-lint`）がドメインの用語に該当する場合: `prose-lint.json` の `allow`・`vocabulary` に追加
 
-## PR
+## Git・PR
 
-- 本文: 背景・変更・検証
+- コミット: 変更・追加したファイルをパスで指定して add（一括の add は禁止、フックで強制）
+- push の前: `pnpm check`（`check` を持つリポは pre-push で強制）
+- PR の本文: 背景・変更・検証
+- マージ: CI の全チェックの成功を確認してから（フックで強制）
+- epic のフロー（有効にしたリポのみ）
+  - epic ごとに `dev/<issue の番号>-<内容>` を作成し、sub-issue の PR は dev のブランチへ
+  - `main` へのマージはデプロイのときだけ dev のブランチから
 
 ## 完了の条件
 
