@@ -87,6 +87,7 @@ Opt in per repository in the root `package.json`:
 `sync` writes these files and `check` compares them, ignoring line endings:
 
 - `.editorconfig`, `.gitattributes`, `.gitignore`, `.gitleaks.toml`, `mise.toml`, `.github/dependabot.yaml`, `.githooks/commit-msg`, `.githooks/pre-push`
+- Skills in `.claude/skills/`: `stacked-pr` (cleaning up a stacked PR after its parent is squash-merged). Only these names are managed; other skills in the repository are kept
 - `.github/dependabot.yaml` updates npm and GitHub Actions. When the repository has a `go.mod` at the root, a `gomod` entry is appended (same schedule, rebase strategy and cooldown, minor and patch grouped). Without one it is left out, because Dependabot fails on a missing `go.mod`
 - When the repository has a `Cargo.toml` at the root, a `cargo` entry is appended to `.github/dependabot.yaml` after any `gomod` entry (same settings as `gomod`, covering workspace members), and `target/` is appended to `.gitignore`. `Cargo.lock` stays tracked
 - `.claude/settings.json`: only the hooks, `attribution`, `permissions.deny`, and the writing plugins are managed. Other settings, hooks, and plugins are kept
