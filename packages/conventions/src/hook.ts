@@ -4,7 +4,7 @@
 // - Stop: 変更があれば `pnpm lint`・`pnpm test` を実行し、失敗時は完了を差し戻し
 // - hook 自体の失敗は終了コード1（拒否にしない → 作業を継続）
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -18,7 +18,7 @@ const root = process.env.CLAUDE_PROJECT_DIR ?? input.cwd ?? process.cwd();
 const shell = process.platform === 'win32';
 
 if (input.hook_event_name === 'PreToolUse') {
-  const reason = denyReason(input, { root, repoRoot, resolveDir, titleIssues, readFile, currentBranch, prHead, prBase, prChecks });
+  const reason = denyReason(input, { root, repoRoot, resolveDir, titleIssues, readFile, currentBranch, prHead, prBase, hasPrWorkflow, prChecks });
   if (reason) {
     process.stderr.write(`${reason}\n`);
     process.exit(2);
@@ -76,6 +76,16 @@ function prHead(pr: string | undefined, cwd: string | undefined): string | undef
 function prBase(pr: string | undefined, cwd: string | undefined): string | undefined {
   const r = spawnSync('gh', ['pr', 'view', ...(pr ? [pr] : []), '--json', 'baseRefName', '--jq', '.baseRefName'], { cwd: cwd ?? root, encoding: 'utf8' });
   return (r.status === 0 && r.stdout.trim()) || undefined;
+}
+
+// 読めなければ「ある」とみなす（チェックなしのマージを許可しない側に倒す）
+function hasPrWorkflow(cwd: string | undefined): boolean {
+  const dir = join(repoRoot(cwd) ?? root, '.github', 'workflows');
+  try {
+    return readdirSync(dir).some((f) => /\.ya?ml$/.test(f) && /^\s*pull_request(_target)?\s*:|^on:.*\bpull_request/m.test(readFileSync(join(dir, f), 'utf8')));
+  } catch (e) {
+    return (e as NodeJS.ErrnoException).code !== 'ENOENT';
+  }
 }
 
 // `gh pr checks` は実行中・失敗で終了コードが0以外（8・1）→ 終了コードではなく出力で判定
