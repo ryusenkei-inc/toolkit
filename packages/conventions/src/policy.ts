@@ -29,6 +29,8 @@ export type Context = {
   prHead: (pr: string | undefined, cwd: string | undefined) => string | undefined;
   /** PR の base のブランチ（`pr` の省略時は現在のブランチの PR） */
   prBase: (pr: string | undefined, cwd: string | undefined) => string | undefined;
+  /** PR で動くワークフロー（`pull_request`）がリポにあるか */
+  hasPrWorkflow: (cwd: string | undefined) => boolean;
   /** PR のチェックの集計（`pr` の省略時は現在のブランチの PR） */
   prChecks: (pr: string | undefined, cwd: string | undefined) => Checks;
 };
@@ -61,7 +63,7 @@ const BRANCH_RULE = `\`<type>/<内容>\`（type = ${TYPES.join('・')}、内容 
 const CHECKS_REASON: Record<Exclude<Checks, 'pass'>, string> = {
   pending: 'CI が実行中。全チェックの成功を確認してからマージ（`gh pr checks --watch`）',
   fail: 'CI が失敗。修正して全チェックが成功してからマージ',
-  none: 'PR にチェックがない。CI の成功を確認できない PR はマージしない',
+  none: 'PR にチェックがない。push の直後ならチェックの登録を待ち、`gh pr checks --watch` で全チェックの成功を確認してからマージ',
   unknown: 'CI の結果を取得できない（`gh pr checks` が失敗）。全チェックの成功を確認してからマージ',
 };
 
@@ -258,6 +260,8 @@ function mergeReasons(args: string[], st: State, ctx: Context): string[] {
   if (!devToMain && merge) return ['マージは squash（`--squash`）。merge commit は epic のフローで dev のブランチから main への PR だけ'];
   const checks = ctx.prChecks(pr, cwd);
   if (checks === 'pass') return [];
+  // PR で動くワークフローがないリポ: CI の代わりに pre-push の `pnpm check` が関門
+  if (checks === 'none' && !ctx.hasPrWorkflow(cwd)) return [];
   if (checks === 'none' && epicFlow(st, ctx)) {
     const base = ctx.prBase(pr, cwd);
     if (base !== undefined && DEV_BRANCH.test(base)) return [];
