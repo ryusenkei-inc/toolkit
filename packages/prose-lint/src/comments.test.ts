@@ -36,6 +36,11 @@ describe('コメントの検査対象', () => {
     expect(texts(['#!/usr/bin/env bash', '# 説明', 'echo 1', '// 併用'].join('\n'), 'hash')).toEqual(['2:説明', '4:併用']);
   });
 
+  it('Rust のドキュメントコメント（`///`・`//!` の記号は本文に含めない）', () => {
+    const source = ['//! クレートの説明', '/// 関数の説明', 'fn main() {}'].join('\n');
+    expect(texts(source)).toEqual(['1:クレートの説明', '2:関数の説明']);
+  });
+
   it('自動修正の範囲は行の中の文だけ', () => {
     const [s] = commentTexts('  /* 本文 */', 'slash');
     expect(s).toEqual({ line: 1, start: 5, end: 7, text: '本文' });

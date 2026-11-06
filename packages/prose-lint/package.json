@@ -1,6 +1,6 @@
 {
   "name": "@ryusenkei/prose-lint",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "リポの中の日本語の文章（コメント・Markdown・コミットメッセージ）の文体の検査",
   "license": "MIT",
   "author": "RYUSENKEI",

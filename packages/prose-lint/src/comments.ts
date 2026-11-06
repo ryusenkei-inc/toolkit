@@ -1,6 +1,6 @@
 // 判定対象の文の抽出: コードのコメント・Markdown の本文
 //   要否の判断は人・AI、書式の確定はここ
-// コメント = 行頭から始まるもの（`//`・`#`・`/* */`・`{/* */}`・`<!-- -->`）
+// コメント = 行頭から始まるもの（`//`・`///`・`//!`・`#`・`/* */`・`{/* */}`・`<!-- -->`）
 //   行の途中から始まるコメントは文字列中の `//`・`/*`（URL・glob）と区別不可 → 行末コメントはスキーマのファイルのみ対象
 
 // `#` のコメントの拡張子（ほかは `//`）
@@ -49,7 +49,8 @@ export function commentTexts(source: string, kind: CommentKind): Span[] {
       return;
     }
     if (i === 0 && raw.startsWith('#!')) return;
-    const comment = raw.match(kind === 'hash' ? /^\s*(?:#|\/\/)/ : /^\s*\/\//);
+    // `///`・`//!` = Rust のドキュメントコメント（記号は本文に含めない）
+    const comment = raw.match(kind === 'hash' ? /^\s*(?:#|\/\/)/ : /^\s*\/\/[/!]?/);
     if (comment) return push(span(line, raw, comment[0].length));
     const html = raw.match(/^\s*<!--/);
     const block = html ?? raw.match(/^\s*\{?\s*\/\*+!?/);
