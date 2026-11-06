@@ -246,7 +246,8 @@ function prReasons(sub: string | undefined, args: string[], st: State, ctx: Cont
 
 // `--auto` も対象（必須のチェックがないリポでは即時にマージされる）
 // - epic のフローの dev/* への PR: チェックなしを許可（CI を実行せず pre-push の `pnpm check` が関門）
-// - epic のフローの dev/* から main への PR: merge commit。squash すると sub-issue ごとのコミットが1つにまとまり、dev と main の履歴もずれる
+// - epic のフローの dev/* から main への PR: merge commit
+//   squash すると sub-issue ごとのコミットが1つにまとまり、dev と main の履歴もずれる
 function mergeReasons(args: string[], st: State, ctx: Context): string[] {
   const { cwd } = st;
   if (args.some((a) => a === '--rebase' || a === '-r')) return ['rebase でのマージは禁止（`--squash`、dev のブランチから main へは `--merge`）'];
