@@ -11,6 +11,12 @@ describe('commands', () => {
   it('先頭の環境変数の指定を除去', () => {
     expect(commands('CI=true FOO=1 pnpm install')).toEqual([['pnpm', 'install']]);
   });
+  it('heredoc の本文は分割しない', () => {
+    expect(commands("cat > a.md <<'EOF'\ngit add -A; x\n  EOF\nEOF\ngit status")).toEqual([['cat', '>', 'a.md'], ['git', 'status']]);
+    expect(commands('cat <<-END\n\tgit push -f\n\tEND\nls')).toEqual([['cat'], ['ls']]);
+    expect(commands(`gh pr create --body "$(cat <<'EOF'\na "b" c\nEOF\n)" --fill`)).toEqual([['gh', 'pr', 'create', '--body', `$(cat <<'EOF'\na "b" c\n)`, '--fill']]);
+    expect(commands('cat <<< "x" && ls')).toEqual([['cat', '<<<', 'x'], ['ls']]);
+  });
   it('引用符の中の改行は分割しない', () => {
     expect(commands('gh pr create --body "a\nb"\ngit status')).toEqual([['gh', 'pr', 'create', '--body', 'a\nb'], ['git', 'status']]);
   });
