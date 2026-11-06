@@ -22,6 +22,8 @@ const FILES: { from: string; to: string; mode?: number; append?: { from: string;
   },
   { from: 'commit-msg', to: '.githooks/commit-msg', mode: 0o755 },
   { from: 'pre-push', to: '.githooks/pre-push', mode: 0o755 },
+  // スキル: 管理するのはこの一覧の名前だけ（リポ独自のスキルは維持）
+  { from: 'skills/stacked-pr/SKILL.md', to: '.claude/skills/stacked-pr/SKILL.md' },
 ];
 const SETTINGS = '.claude/settings.json';
 const WORKSPACE = 'pnpm-workspace.yaml';
