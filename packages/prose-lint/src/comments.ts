@@ -65,21 +65,6 @@ export function commentTexts(source: string, kind: CommentKind): Span[] {
   return out;
 }
 
-// 文の途中の改行: 同じ字下げで続く2行のうち、前の行の末尾が読点・助詞、または次の行の先頭が助詞・読点
-//   検出の対象: 幅の調整を目的とする折り返し → 1行1文に分割・箇条書きに変更
-//   対象外: 箇条書きの行・字下げの深い補足の行・末尾が名詞の語（こと・まで・ごと）
-const WRAP_END = /(、|(?<!ま)で|(?<![こご])と|[はがをにへやも])$/;
-const WRAP_START = /^[をにがはでとへや、]/;
-export function wrappedLines(spans: Span[]): number[] {
-  const out: number[] = [];
-  for (const [i, a] of spans.entries()) {
-    const b = spans[i + 1];
-    if (!b || b.line !== a.line + 1 || b.start !== a.start || /^(- |\d+\. )/.test(b.text)) continue;
-    if (WRAP_END.test(a.text.replace(/`[^`]*`/g, 'x')) || WRAP_START.test(b.text)) out.push(a.line);
-  }
-  return out;
-}
-
 // フィールドの行（末尾が `,`・`;`）と行末コメント
 const FIELD = /^(\s*[^\s/].*?[,;])(?:\s+\/\/ (.*))?$/;
 export function trailingComment(line: string): { code: string; text?: string } | undefined {

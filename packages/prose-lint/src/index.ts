@@ -1,6 +1,6 @@
 export { commentIssues, textIssues, type Options } from './text.ts';
 export { fixSpacing } from './format.ts';
-export { VOCABULARY } from './style.ts';
+export { NOTATION } from './notation.ts';
 export type { Issue, Vocabulary } from './rule.ts';
 export { commitMessageIssues } from './commit.ts';
 export { alignTrailing, commentTexts, markdownTexts, trailingComment } from './comments.ts';

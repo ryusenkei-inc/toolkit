@@ -1,7 +1,7 @@
 {
   "name": "@ryusenkei/prose-lint",
-  "version": "0.1.1",
-  "description": "リポの中の日本語の文章（コメント・Markdown・コミットメッセージ）の文体の検査",
+  "version": "0.2.0",
+  "description": "リポの中の日本語の文章（コメント・Markdown・コミットメッセージ）の書式・表記の検査",
   "license": "MIT",
   "author": "RYUSENKEI",
   "repository": {
@@ -22,8 +22,7 @@
     "prose-lint": "dist/cli.js"
   },
   "files": [
-    "dist",
-    "golden"
+    "dist"
   ],
   "engines": {
     "node": ">=24"

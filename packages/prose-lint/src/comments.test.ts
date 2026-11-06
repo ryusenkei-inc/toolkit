@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { commentTexts, isGenerated, markdownTexts, wrappedLines } from './comments.ts';
+import { commentTexts, isGenerated, markdownTexts } from './comments.ts';
 
 describe('生成物の判定', () => {
   it('先頭の生成の表記で判定', () => {
@@ -44,24 +44,6 @@ describe('コメントの検査対象', () => {
   it('自動修正の範囲は行の中の文だけ', () => {
     const [s] = commentTexts('  /* 本文 */', 'slash');
     expect(s).toEqual({ line: 1, start: 5, end: 7, text: '本文' });
-  });
-});
-
-describe('文の途中の改行', () => {
-  const wrapped = (lines: string[]) => wrappedLines(commentTexts(lines.map((l) => `// ${l}`).join('\n'), 'slash'));
-
-  it('前の行の末尾が読点・助詞、または次の行の先頭が助詞', () => {
-    expect(wrapped(['断片の箱は行の上端から配置。既定では最後の行が基準になり、', '本文のベースラインが下がる'])).toEqual([1]);
-    expect(wrapped(['キーは判定が割り当てる値で', '方式を差し替えても同じ'])).toEqual([1]);
-    expect(wrapped(['結果の分類と状態', 'を IR に含む'])).toEqual([1]);
-  });
-
-  it('文の区切りで改行・箇条書き・字下げの補足は対象外', () => {
-    expect(wrapped(['plan は探索の計画', 'どちらも1手ごとに更新'])).toEqual([]);
-    expect(wrapped(['通し番号が最後の番号に続かないこと', '欠番は取得できない'])).toEqual([]);
-    expect(wrapped(['再現の手順は先頭から対象の手順まで', '件数が多い場合は省略'])).toEqual([]);
-    expect(wrapped(['対象:', '- 記事と', '- 連載'])).toEqual([]);
-    expect(wrapped(['キャッシュの格納は', '  失敗しても継続'])).toEqual([]);
   });
 });
 

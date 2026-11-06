@@ -1,12 +1,11 @@
 #!/usr/bin/env node
-// 日本語の文章（コメント・Markdown）の書式・文体をリポ単位で検査
+// 日本語の文章（コメント・Markdown）の書式・表記をリポ単位で検査
 //   違反 → 終了コード1
 //   prose-lint [paths...] [--summary] [--fix] [--config <file>]
 //   prose-lint --commit-msg <file>  コミットメッセージの検査（commit-msg フック）
 //   prose-lint --hook               編集したファイルの検査（Claude Code の PostToolUse フック）
-//   prose-lint --golden             手本（golden/）の表示
 //   --fix: コメントの和欧間のスペースと、行末コメントの開始位置だけ自動修正
-//     対象外: Markdown・語彙・構造 → 文脈の判断が必要
+//     対象外: Markdown・表記 → 文脈の判断が必要
 // 設定 = config.ts
 // パスはリポのルートからの相対で判定
 import { execFileSync } from 'node:child_process';
@@ -14,7 +13,7 @@ import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { relative, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 import { commitMessageIssues } from './commit.ts';
-import { alignTrailing, commentKind, commentTexts, isGenerated, markdownTexts, trailingComment, wrappedLines } from './comments.ts';
+import { alignTrailing, commentKind, commentTexts, isGenerated, markdownTexts, trailingComment } from './comments.ts';
 import { loadConfig, textOptions } from './config.ts';
 import { examplesFor } from './examples.ts';
 import { fixSpacing } from './format.ts';
@@ -27,18 +26,10 @@ const { values, positionals } = parseArgs({
     summary: { type: 'boolean', default: false },
     fix: { type: 'boolean', default: false },
     hook: { type: 'boolean', default: false },
-    golden: { type: 'boolean', default: false },
     'commit-msg': { type: 'string' },
     config: { type: 'string' },
   },
 });
-
-// 手本はパッケージに同梱（src・dist の1つ上）
-const GOLDEN = ['GUIDE.md', 'comments.ts', 'commit.txt'];
-if (values.golden) {
-  for (const file of GOLDEN) console.log(`==> golden/${file}\n${readFileSync(new URL(`../golden/${file}`, import.meta.url), 'utf8')}`);
-  process.exit(0);
-}
 
 // 引数のパスはリポのルートからの相対に変換してから移動（サブディレクトリから実行しても同じ結果）
 const root = execFileSync('git', ['rev-parse', '--show-toplevel'], { encoding: 'utf8' }).trim();
@@ -57,16 +48,16 @@ try {
 const { config } = loaded;
 const options = textOptions(config);
 const format = (issues: Issue[]) => issues.map((i) => `${i.message} [${i.rule}]`).join(' / ');
-// 修正の例（指摘のあった規則の分だけ）と手本の案内
-const guide = (rules: Iterable<string>) => {
-  const examples = examplesFor(rules);
-  return [...(examples.length ? ['修正の例:', ...examples.map((e) => `  ${e}`)] : []), '手本: npx prose-lint --golden'].join('\n');
+// 修正の例（指摘のあった規則の分だけ）
+const guide = (found: { issues: Issue[] }[]) => {
+  const examples = examplesFor(found.flatMap((f) => f.issues.map((i) => i.rule)));
+  return examples.length ? ['修正の例:', ...examples.map((e) => `  ${e}`)] : [];
 };
 
 if (commitMsg) {
   const found = commitMessageIssues(readFileSync(commitMsg, 'utf8'), options);
   for (const f of found) console.log(`コミットメッセージ ${f.line} 行目: ${format(f.issues)}\n  ${f.text}`);
-  if (found.length) console.log(guide(found.flatMap((f) => f.issues.map((i) => i.rule))));
+  for (const line of guide(found)) console.log(line);
   process.exit(found.length ? 1 : 0);
 }
 
@@ -88,9 +79,7 @@ function check(file: string, source: string): Found[] {
   }
   if (isGenerated(source)) return out;
   const spans = commentTexts(source, commentKind(file));
-  const wrapped = new Set(options.disabled.has('format/wrap') ? [] : wrappedLines(spans));
-  const wrap = { rule: 'format/wrap', message: '文を行の途中で改行しない（1行1文に分割・箇条書き）' };
-  for (const s of spans) add(s.line, s.text, [...commentIssues(s.text, options), ...(wrapped.has(s.line) ? [wrap] : [])]);
+  for (const s of spans) add(s.line, s.text, commentIssues(s.text, options));
   if (!trailingFiles.test(file)) return out;
   const lines = source.split(/\r?\n/);
   const aligned = alignTrailing(lines);
@@ -113,7 +102,7 @@ if (values.hook) {
   if (!file || file.startsWith('..') || skip.test(file) || !existsSync(file) || !(file.endsWith('.md') || (extension.test(file) && inPaths(file)))) process.exit(0);
   const found = check(file, readFileSync(file, 'utf8'));
   if (!found.length) process.exit(0);
-  console.error([...found.map((f) => `${f.where}: ${format(f.issues)}\n  ${f.text}`), guide(found.flatMap((f) => f.issues.map((i) => i.rule)))].join('\n'));
+  console.error([...found.map((f) => `${f.where}: ${format(f.issues)}\n  ${f.text}`), ...guide(found)].join('\n'));
   process.exit(2);
 }
 
@@ -155,7 +144,7 @@ if (values.summary) {
   for (const [issue, n] of [...counts].sort((a, b) => b[1] - a[1])) console.log(`${String(n).padStart(5)}  ${issue}`);
 } else {
   for (const f of found) console.log(`${f.where}: ${format(f.issues)}\n  ${f.text}`);
-  if (found.length) console.log(guide(found.flatMap((f) => f.issues.map((i) => i.rule))));
+  for (const line of guide(found)) console.log(line);
 }
 console.log(found.length ? `${found.length} 行` : '問題なし');
 process.exitCode = found.length ? 1 : 0;

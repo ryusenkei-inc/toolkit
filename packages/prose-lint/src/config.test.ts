@@ -33,12 +33,14 @@ describe('設定', () => {
     expect(() => loadConfig(repo({ 'prose-lint.json': {}, '.config/prose-lint.json': {} }))).toThrow('設定が複数');
     expect(() => loadConfig(repo({ 'prose-lint.json': { path: ['src'] } }))).toThrow('未知のキー path');
     expect(() => loadConfig(repo({ 'prose-lint.json': { rules: { 'style/foo': false } } }))).toThrow('未知の規則 style/foo');
+    // 0.2.0 で削除した文体の規則
+    expect(() => loadConfig(repo({ 'prose-lint.json': { rules: { 'style/hedge': false } } }))).toThrow('未知の規則 style/hedge');
   });
 
   it('規則の無効化と許可語', () => {
-    const { config } = loadConfig(repo({ 'prose-lint.json': { rules: { 'style/hedge': false, 'format/period': true }, allow: ['読み物'] } }));
+    const { config } = loadConfig(repo({ 'prose-lint.json': { rules: { 'format/notation': false, 'format/period': true }, allow: ['読み物'] } }));
     const options = textOptions(config);
-    expect([...options.disabled]).toEqual(['style/hedge']);
+    expect([...options.disabled]).toEqual(['format/notation']);
     expect(options.allow?.[0]?.test('読み物')).toBe(true);
   });
 });
