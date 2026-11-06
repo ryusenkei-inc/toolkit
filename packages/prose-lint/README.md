@@ -43,7 +43,7 @@ Add a script to `package.json`:
 
 | Source | Checked text |
 | --- | --- |
-| Code | Comments that start a line: `//`, `/* */` (including JSDoc), `{/* */}`, and `<!-- -->`. `#` for `tf`, `py`, `sh`, `rb`, `yaml`, `yml`, and `toml`. JSDoc `@example` blocks and fenced code are skipped |
+| Code | Comments that start a line: `//`, `///` and `//!` (Rust doc comments, checked without the marker), `/* */` (including JSDoc), `{/* */}`, and `<!-- -->`. `#` for `tf`, `py`, `sh`, `rb`, `yaml`, `yml`, and `toml`. JSDoc `@example` blocks and fenced code are skipped |
 | Trailing comments | Only in files matched by `trailingFiles` (a comment after code can't be told apart from `//` in a string) |
 | Markdown | Paragraphs, list items, headings, block quotes, and table cells. Code blocks, HTML comments, front matter, and link URLs are skipped |
 | Commit messages | The subject after `type(scope): `, and every other line |
