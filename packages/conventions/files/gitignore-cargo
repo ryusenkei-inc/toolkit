@@ -1,0 +1,3 @@
+
+# ---- Rust（ルートに Cargo.toml があるリポのみ `sync` が追加。Cargo.lock は追跡） ----
+target/
