@@ -66,6 +66,8 @@
 
 ## CI（GitHub Actions）
 
+- CI は toolkit の再利用可能なワークフロー（`reusable-ci.yaml`、`reusable-pr-title.yaml`）を呼ぶ。リポ独自の検査は入力の `checks` に書き、言語ごとのジョブ（Go、Rust）は呼ぶ側に足す。呼び方は `@ryusenkei/conventions` の README
+
 非公開のリポでは GitHub Free の時間を節約する（上限は組織の合計で月2,000分、ジョブごとに分単位で切り上げて計上）
 
 - 実行するのは `main` 行きの PR だけ。マージの結果の ref は PR で検査済みなので、`main` への push では実行しない

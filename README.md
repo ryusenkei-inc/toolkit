@@ -19,6 +19,10 @@ pnpm test      # unit tests
 pnpm build     # build dist/ for each package
 ```
 
+## Reusable workflows
+
+`.github/workflows/reusable-ci.yaml` and `reusable-pr-title.yaml` are the CI of the other repositories. The [conventions README](packages/conventions/README.md#ci) shows how to call them.
+
 ## Publishing
 
 Publishing runs on GitHub Actions when a tag `<package>@<version>` is pushed. It uses npm trusted publishing with provenance, so no npm token is stored.
