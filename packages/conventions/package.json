@@ -1,6 +1,6 @@
 {
   "name": "@ryusenkei/conventions",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "description": "RYUSENKEI のモノリポの共通の規約（Claude Code の規約・hook、共通ファイルの同期）",
   "license": "MIT",
   "author": "RYUSENKEI",
@@ -24,7 +24,7 @@
   "files": [
     "dist",
     "files",
-    "rules.md"
+    "rules*.md"
   ],
   "engines": {
     "node": ">=24"
