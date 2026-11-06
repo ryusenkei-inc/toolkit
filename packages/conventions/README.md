@@ -59,7 +59,7 @@ The PreToolUse hook blocks the call and tells Claude why, so Claude can fix it a
 | Secrets | `permissions.deny` blocks reading `.env` and `.dev.vars` with Claude's file tools (not Bash) |
 | Definition of done (`--stop`) | The Stop hook runs `pnpm lint` and `pnpm test` when the working tree has changes, and sends Claude back once on failure |
 
-Commit messages are checked by `.githooks/commit-msg`, and edited files by prose-lint's PostToolUse hook. `.githooks/pre-push` runs `pnpm run --if-present check`, so a repository that defines a `check` script cannot push until it passes. It applies to people as well as Claude. When [loadslot](https://github.com/ryusenkei-inc/loadslot) (or `jobgate`, its former name) is on the `PATH` and the repository has a `check` script, the check runs through `loadslot run`, so pushes from parallel agents and repositories wait for free memory instead of exhausting it.
+Commit messages are checked by `.githooks/commit-msg`, and edited files by prose-lint's PostToolUse hook. `.githooks/pre-push` runs `pnpm run --if-present check`, so a repository that defines a `check` script cannot push until it passes. It applies to people as well as Claude. When [Hostslot](https://github.com/ryusenkei-inc/hostslot) (`hostslot`) is on the `PATH` and the repository has a `check` script, the check runs through `hostslot run`, so pushes from parallel agents and repositories wait for free memory instead of exhausting it.
 
 ### Epic flow
 
