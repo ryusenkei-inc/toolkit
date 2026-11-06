@@ -107,6 +107,56 @@ When the `rules.md` import is present, `sync` adds the missing ones right after 
 
 Dependabot runs monthly with `rebase-strategy: disabled` to save GitHub Actions minutes, so rebase a Dependabot PR (`@dependabot rebase`) before merging it. The `cooldown` excludes `@ryusenkei/*`. To pick up a new version sooner, run `pnpm update "@ryusenkei/*"`. After an update, `check` fails until `sync` is run.
 
+## CI
+
+The CI lives in toolkit as reusable workflows, so each repository only keeps the triggers:
+
+```yaml
+# .github/workflows/ci.yaml
+name: CI
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened]
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+permissions:
+  contents: read
+jobs:
+  ci:
+    uses: ryusenkei-inc/toolkit/.github/workflows/reusable-ci.yaml@main
+    with:
+      checks: |
+        pnpm lint:deps
+```
+
+```yaml
+# .github/workflows/pr-title.yaml
+name: PR title
+on:
+  pull_request:
+    branches: [main]
+    types: [edited]
+concurrency:
+  group: pr-title-${{ github.ref }}
+  cancel-in-progress: true
+permissions:
+  contents: read
+jobs:
+  title:
+    uses: ryusenkei-inc/toolkit/.github/workflows/reusable-pr-title.yaml@main
+```
+
+| Workflow | Steps |
+| --- | --- |
+| `reusable-ci.yaml` | Checkout (full history), mise, pnpm, `pnpm install --frozen-lockfile`, `pnpm typecheck`, `pnpm test`, `pnpm lint:prose`, the `checks` input, the PR title with prose-lint's commit rules (not for Dependabot), and a gitleaks scan with `.gitleaks.toml` |
+| `reusable-pr-title.yaml` | Re-checks the PR title when it is edited, with the `@ryusenkei/prose-lint` version from `package.json` and no install |
+
+- Language jobs (Go, Rust) stay in the calling workflow as extra jobs.
+- PR title edits run in their own workflow. In the same workflow, the later `edited` run would overwrite the `ci` job's result with "skipped" and hide a failure.
+- `@main` follows toolkit's `main`, so fixes reach every repository at once. A breaking change gets a new file name instead of changing these.
+
 ## Versioning
 
 - major: a rule is removed or reversed, or a synced file changes incompatibly
