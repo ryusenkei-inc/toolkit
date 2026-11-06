@@ -1,6 +1,6 @@
 {
   "name": "@ryusenkei/conventions",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "description": "RYUSENKEI のモノリポの共通の規約（Claude Code の規約・hook、共通ファイルの同期）",
   "license": "MIT",
   "author": "RYUSENKEI",
@@ -39,7 +39,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@ryusenkei/prose-lint": "workspace:^"
+    "@ryusenkei/prose-lint": "workspace:^0.1.0"
   },
   "devDependencies": {
     "@types/node": "^26.6.1",
