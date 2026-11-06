@@ -246,10 +246,16 @@ function prReasons(sub: string | undefined, args: string[], st: State, ctx: Cont
 
 // `--auto` も対象（必須のチェックがないリポでは即時にマージされる）
 // - epic のフローの dev/* への PR: チェックなしを許可（CI を実行せず pre-push の `pnpm check` が関門）
+// - epic のフローの dev/* から main への PR: merge commit
+//   squash すると sub-issue ごとのコミットが1つにまとまり、dev と main の履歴もずれる
 function mergeReasons(args: string[], st: State, ctx: Context): string[] {
   const { cwd } = st;
-  if (args.some((a) => a === '--merge' || a === '--rebase' || a === '-m' || a === '-r')) return ['マージは squash のみ（`--squash`）'];
+  if (args.some((a) => a === '--rebase' || a === '-r')) return ['rebase でのマージは禁止（`--squash`、dev のブランチから main へは `--merge`）'];
   const pr = positionals(args, MERGE_VALUE)[0];
+  const merge = args.some((a) => a === '--merge' || a === '-m');
+  const devToMain = epicFlow(st, ctx) && DEV_BRANCH.test(ctx.prHead(pr, cwd) ?? '') && PROTECTED.includes(ctx.prBase(pr, cwd) ?? '');
+  if (devToMain && !merge) return ['dev のブランチから main へのマージは merge commit（`--merge`）。sub-issue ごとのコミットを残すため'];
+  if (!devToMain && merge) return ['マージは squash（`--squash`）。merge commit は epic のフローで dev のブランチから main への PR だけ'];
   const checks = ctx.prChecks(pr, cwd);
   if (checks === 'pass') return [];
   if (checks === 'none' && epicFlow(st, ctx)) {

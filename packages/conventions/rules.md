@@ -57,11 +57,12 @@
 - add は変更・追加したファイルをパスで指定する。一括の add はフックで止まる
 - push の前に `pnpm check` を通す。`check` を持つリポでは pre-push で強制される
 - PR の本文は背景、変更、検証の順に書く
-- マージは CI の全チェックの成功を確かめてから行う（フックで強制）
+- マージは squash で、CI の全チェックの成功を確かめてから行う（フックで強制）
 - epic のフロー（有効にしたリポだけ）
   - epic ごとに `dev/<issue の番号>-<内容>` を作り、sub-issue の PR は dev のブランチに向ける
   - dev のブランチへのマージに CI は使わず、pre-push の `pnpm check` を関門にする。チェックがある場合は成功が必要
-  - `main` へのマージは、デプロイのときに dev のブランチからだけ行う
+  - `main` へのマージは、デプロイのときに dev のブランチからだけ行う。方法は merge commit（`gh pr merge --merge`）で、sub-issue ごとのコミットを残し、dev と main の履歴をずらさない
+  - リポの設定で merge commit を許可する（Settings → General → Allow merge commits）
 
 ## CI（GitHub Actions）
 
