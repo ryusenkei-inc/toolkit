@@ -1,8 +1,12 @@
+import { posix } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { denyReason, type Checks, type Context } from './policy.ts';
 
+// リポ: `/repo`（epic のフローは `epic` で有効化）と `/other`（epic のフローなし）
 const context = (o: { branch?: string; checks?: Checks; epic?: boolean; base?: string } = {}): Context => ({
   root: '/repo',
+  repoRoot: (cwd) => ['/repo', '/other'].find((r) => cwd === r || cwd?.startsWith(`${r}/`)),
+  resolveDir: (base, dir) => posix.resolve(base ?? '/repo', dir),
   titleIssues: (title) => (/^[a-z]+(\([a-z]+\))?: /.test(title) ? [] : ['Conventional Commits の書式']),
   readFile: (path) => {
     if (path.endsWith('body.md')) return '## 背景\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n';
@@ -155,6 +159,40 @@ describe('epic のフロー', () => {
     expect(bash('gh pr edit 3 --body x', epic())).toBeUndefined();
     expect(bash('gh pr edit 3 --base main', epic())).toMatch('`main` への PR');
     expect(bash('gh pr edit 7 --base main', epic())).toBeUndefined();
+  });
+});
+
+describe('コマンドから対象を解決', () => {
+  it('cd の後は移動先のリポの規則で判定', () => {
+    const epic = context({ epic: true });
+    expect(bash('gh pr create -t "feat: x" -b y', epic)).toMatch('`main` への PR');
+    expect(bash('cd /other && gh pr create -t "feat: x" -b y', epic)).toBeUndefined();
+    // epic のフローの案内（`dev/...`）を含まない
+    expect(bash('cd ../other && git switch -c tmp', epic)).toMatch(/`-`）: `tmp`$/);
+    expect(bash('git -C /other switch -c dev/12-search', epic)).toMatch('<type>/<内容>');
+    // セッションの外のリポから戻った場合
+    expect(denyReason({ tool_name: 'Bash', tool_input: { command: 'cd /repo && gh pr create -t "feat: x" -b y' }, cwd: '/other' }, epic)).toMatch('`main` への PR');
+  });
+
+  it('ブランチの切り替えの後は切り替え先のブランチで判定', () => {
+    const onMain = context({ branch: 'main' });
+    expect(bash('git push --force-with-lease', onMain)).toMatch('force push');
+    expect(bash('git switch feat/x && git push --force-with-lease', onMain)).toBeUndefined();
+    expect(bash('git checkout -b fix/y && git push -f -u origin HEAD', onMain)).toBeUndefined();
+    expect(bash('git switch main && git push -f')).toMatch('force push');
+    // 別のリポに移動したら、切り替えた状態を持ち越さない
+    expect(bash('git switch feat/x && cd /other && git push -f', onMain)).toMatch('force push');
+    // `git checkout <path>` と区別できない形は切り替えとみなさない
+    expect(bash('git checkout -- feat/x && git push -f', onMain)).toMatch('force push');
+  });
+
+  it('heredoc の本文はコマンドとして判定しない', () => {
+    const issue = ['gh issue create --title "fix: x" --body "$(cat <<\'EOF\'', '例: `git push --force origin main` を拒否', 'git add -A', 'EOF', ')"'].join('\n');
+    expect(bash(issue)).toBeUndefined();
+    expect(bash(['cat > note.md <<EOF', 'git add .', 'EOF', 'git add -A'].join('\n'))).toMatch('パスで指定して add');
+    // 引用符の中の heredoc は語の一部 → 本文の検査は継続
+    const pr = ['gh pr create -t "feat: x" --body "$(cat <<\'EOF\'', '## 背景', '', 'Co-Authored-By: Claude <noreply@anthropic.com>', 'EOF', ')"'].join('\n');
+    expect(bash(pr)).toMatch('AI の署名');
   });
 });
 

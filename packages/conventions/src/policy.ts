@@ -1,6 +1,7 @@
 // PreToolUse で拒否するツールの実行
 // - 判定は純粋な関数 → 外部の処理（タイトルの検査・ファイルの読み込み・git・gh）は `Context` で注入
 // - 拒否の理由は Claude に返却 → Claude が修正して再実行
+// - 対象のリポ・ブランチはコマンドから解決: `cd`・`git -C` の後はその git のルート、ブランチの切り替えの後はその先のブランチ
 import { isAbsolute, join } from 'node:path';
 import { commands, option } from './shell.ts';
 
@@ -12,10 +13,14 @@ export type Checks = 'pass' | 'pending' | 'fail' | 'none' | 'unknown';
 
 /** 判定に必要な外部の処理 */
 export type Context = {
-  /** リポのルート（`package.json` の opt-in の読み込み元） */
+  /** セッションのリポのルート（作業ディレクトリの git のルートが不明なときの判定の対象） */
   root: string;
+  /** 作業ディレクトリの git のルート（git の外・取得の失敗時は `undefined`） */
+  repoRoot: (cwd: string | undefined) => string | undefined;
+  /** `cd` の移動先（`base` からの相対・`~` などを解決。解決できなければ `undefined`） */
+  resolveDir: (base: string | undefined, dir: string) => string | undefined;
   /** PR のタイトルの指摘（なければ空配列） */
-  titleIssues: (title: string) => string[];
+  titleIssues: (title: string, cwd: string | undefined) => string[];
   /** ファイルの内容（読み込みの失敗時は `undefined`） */
   readFile: (path: string) => string | undefined;
   /** 現在のブランチ（detached HEAD・取得の失敗時は `undefined`） */
@@ -60,6 +65,10 @@ const CHECKS_REASON: Record<Exclude<Checks, 'pass'>, string> = {
   unknown: 'CI の結果を取得できない（`gh pr checks` が失敗）。全チェックの成功を確認してからマージ',
 };
 
+// コマンドの列を順に評価するときの状態
+// - `branch`: 同じコマンドの列で切り替えたブランチ（`undefined` = 実行前の現在のブランチ）
+type State = { cwd: string | undefined; branch?: string };
+
 /** 拒否の理由（許可する場合は `undefined`） */
 export function denyReason(use: ToolUse, ctx: Context): string | undefined {
   if (EDIT_TOOLS.includes(use.tool_name)) {
@@ -68,21 +77,39 @@ export function denyReason(use: ToolUse, ctx: Context): string | undefined {
     return undefined;
   }
   if (use.tool_name !== 'Bash') return undefined;
-  const reasons = commands(String(use.tool_input.command ?? '')).flatMap((words) => commandReasons(words, use.cwd, ctx));
+  const st: State = { cwd: use.cwd };
+  const reasons = commands(String(use.tool_input.command ?? '')).flatMap((words) => commandReasons(words, st, ctx));
   return reasons.length ? reasons.join('\n') : undefined;
 }
 
-function commandReasons(words: string[], cwd: string | undefined, ctx: Context): string[] {
+// 判定の後に、`cd`・ブランチの切り替えを状態に反映
+function commandReasons(words: string[], st: State, ctx: Context): string[] {
   const [cmd, ...args] = words;
+  if (cmd === 'cd' || cmd === 'pushd') {
+    const dir = args.find((a) => !a.startsWith('-'));
+    const next = dir === undefined ? undefined : ctx.resolveDir(st.cwd, dir);
+    if (next !== undefined && next !== st.cwd) Object.assign(st, { cwd: next, branch: undefined });
+    return [];
+  }
   if (cmd === 'yarn' || (cmd === 'npm' && NPM_CHANGES.includes(args[0] ?? ''))) return ['パッケージ管理は pnpm のみ（`pnpm add`・`pnpm install` など）'];
-  if (cmd === 'git') return gitReasons(gitArgs(args), cwd, ctx);
-  if (cmd === 'gh' && args[0] === 'pr') return prReasons(args[1], args.slice(2), cwd, ctx);
+  if (cmd === 'git') {
+    const { dir, rest } = gitArgs(args);
+    // `git -C <path>` はその場所の git で判定し、切り替えは状態に反映しない
+    const target: State = dir === undefined ? st : { cwd: ctx.resolveDir(st.cwd, dir) ?? st.cwd };
+    const reasons = gitReasons(rest, target, ctx);
+    const branch = dir === undefined ? switchedBranch(rest[0], rest.slice(1)) : undefined;
+    if (branch !== undefined) st.branch = branch;
+    return reasons;
+  }
+  if (cmd === 'gh' && args[0] === 'pr') return prReasons(args[1], args.slice(2), st, ctx);
   return [];
 }
 
-// epic のフローの opt-in: ルートの `package.json` の `"ryusenkei": { "flow": "epic" }`
-function epicFlow(ctx: Context): boolean {
-  const raw = ctx.readFile(join(ctx.root, 'package.json'));
+const branchOf = (st: State, ctx: Context) => st.branch ?? ctx.currentBranch(st.cwd);
+
+// epic のフローの opt-in: 対象のリポのルートの `package.json` の `"ryusenkei": { "flow": "epic" }`
+function epicFlow(st: State, ctx: Context): boolean {
+  const raw = ctx.readFile(join(ctx.repoRoot(st.cwd) ?? ctx.root, 'package.json'));
   if (raw === undefined) return false;
   try {
     return (JSON.parse(raw) as { ryusenkei?: { flow?: unknown } }).ryusenkei?.flow === 'epic';
@@ -92,10 +119,27 @@ function epicFlow(ctx: Context): boolean {
 }
 
 // git の全体のオプション（`-C <path>`・`-c <name=value>` など）を除去
-function gitArgs(args: string[]): string[] {
+// - `dir`: `-C` の場所（複数あれば git と同じく前から順に連結）
+function gitArgs(args: string[]): { dir: string | undefined; rest: string[] } {
   let i = 0;
-  while (i < args.length && args[i]!.startsWith('-')) i += args[i] === '-C' || args[i] === '-c' ? 2 : 1;
-  return args.slice(i);
+  let dir: string | undefined;
+  while (i < args.length && args[i]!.startsWith('-')) {
+    const value = args[i + 1];
+    if (args[i] === '-C' && value !== undefined) dir = dir === undefined || isAbsolute(value) ? value : join(dir, value);
+    i += args[i] === '-C' || args[i] === '-c' ? 2 : 1;
+  }
+  return { dir, rest: args.slice(i) };
+}
+
+// 切り替え先のブランチ（`git switch`・`git checkout`）
+// - `git checkout <path>` と区別できない形（`--` を含む・位置引数が2つ以上）は対象外
+function switchedBranch(sub: string | undefined, args: string[]): string | undefined {
+  if (sub !== 'switch' && sub !== 'checkout') return undefined;
+  const created = sub === 'switch' ? option(args, ['-c', '-C', '--create', '--force-create']) : option(args, ['-b', '-B']);
+  if (created !== undefined) return created;
+  if (args.includes('--') || args.includes('--detach') || args.includes('-d')) return undefined;
+  const names = args.filter((a) => !a.startsWith('-'));
+  return names.length === 1 && names[0] !== '-' ? names[0] : undefined;
 }
 
 // 位置引数（`--` 以降はすべて位置引数）
@@ -128,16 +172,16 @@ function hasShort(args: string[], flag: string, valued = ''): boolean {
   return false;
 }
 
-function gitReasons([sub, ...args]: string[], cwd: string | undefined, ctx: Context): string[] {
+function gitReasons([sub, ...args]: string[], st: State, ctx: Context): string[] {
   if ((sub === 'commit' || sub === 'push') && args.includes('--no-verify')) return ['フックの省略（`--no-verify`）は禁止'];
   // `git commit -n` = `--no-verify`（`git push -n` は dry run）
   if (sub === 'commit' && hasShort(args, 'n', COMMIT_VALUE_SHORT)) return ['フックの省略（`-n`）は禁止'];
   if (sub === 'commit' && (args.includes('--all') || hasShort(args, 'a', COMMIT_VALUE_SHORT))) return [BULK_STAGING];
   if (sub === 'add' && bulkAdd(args)) return [BULK_STAGING];
-  if (sub === 'push') return pushReasons(args, cwd, ctx);
+  if (sub === 'push') return pushReasons(args, st, ctx);
   const name = newBranch(sub, args);
   if (name === undefined || BRANCH.test(name)) return [];
-  if (!epicFlow(ctx)) return [`ブランチ名は ${BRANCH_RULE}: \`${name}\``];
+  if (!epicFlow(st, ctx)) return [`ブランチ名は ${BRANCH_RULE}: \`${name}\``];
   if (DEV_BRANCH.test(name)) return [];
   return [`ブランチ名は ${BRANCH_RULE}、epic は \`dev/<issue の番号>-<内容>\`: \`${name}\``];
 }
@@ -149,21 +193,21 @@ function bulkAdd(args: string[]): boolean {
 }
 
 // main・master への force push を拒否
-function pushReasons(args: string[], cwd: string | undefined, ctx: Context): string[] {
+function pushReasons(args: string[], st: State, ctx: Context): string[] {
   const forceAll = args.some((a) => a === '--force' || a.startsWith('--force-with-lease')) || hasShort(args, 'f', 'o');
   if (args.includes('--all') || args.includes('--mirror')) return forceAll ? [`\`--all\`・\`--mirror\` の force push は禁止（${PROTECTED.join('・')} を含む）。${ASK_USER}`] : [];
   const [, ...refspecs] = positionals(args, PUSH_VALUE);
   const targets = refspecs.length
-    ? refspecs.map((r) => ({ force: forceAll || r.startsWith('+'), branch: pushTarget(r.replace(/^\+/, ''), cwd, ctx) }))
-    : [{ force: forceAll, branch: ctx.currentBranch(cwd) }];
+    ? refspecs.map((r) => ({ force: forceAll || r.startsWith('+'), branch: pushTarget(r.replace(/^\+/, ''), st, ctx) }))
+    : [{ force: forceAll, branch: branchOf(st, ctx) }];
   const hit = targets.find((t) => t.force && t.branch !== undefined && PROTECTED.includes(t.branch));
   return hit ? [`\`${hit.branch}\` への force push は禁止。${ASK_USER}`] : [];
 }
 
-function pushTarget(refspec: string, cwd: string | undefined, ctx: Context): string | undefined {
+function pushTarget(refspec: string, st: State, ctx: Context): string | undefined {
   const dst = refspec.includes(':') ? refspec.slice(refspec.indexOf(':') + 1) : refspec;
   const name = dst.replace(/^refs\/heads\//, '');
-  return name === 'HEAD' ? ctx.currentBranch(cwd) : name;
+  return name === 'HEAD' ? branchOf(st, ctx) : name;
 }
 
 // 作成・リネームするブランチの名前
@@ -185,28 +229,30 @@ function newBranch(sub: string | undefined, args: string[]): string | undefined 
   }
 }
 
-function prReasons(sub: string | undefined, args: string[], cwd: string | undefined, ctx: Context): string[] {
-  if (sub === 'merge') return mergeReasons(args, cwd, ctx);
+function prReasons(sub: string | undefined, args: string[], st: State, ctx: Context): string[] {
+  const { cwd } = st;
+  if (sub === 'merge') return mergeReasons(args, st, ctx);
   if (sub !== 'create' && sub !== 'edit') return [];
   const reasons: string[] = [];
   const title = option(args, ['--title', '-t']);
   if (title === undefined && sub === 'create') reasons.push('PR のタイトルを `--title` で指定（`main` のコミットのメッセージになるため検査）');
-  if (title !== undefined) reasons.push(...ctx.titleIssues(title).map((i) => `PR のタイトル: ${i}`));
+  if (title !== undefined) reasons.push(...ctx.titleIssues(title, cwd).map((i) => `PR のタイトル: ${i}`));
   const file = option(args, ['--body-file', '-F']);
   const body = [option(args, ['--body', '-b']), file && file !== '-' ? ctx.readFile(isAbsolute(file) || !cwd ? file : join(cwd, file)) : undefined].join('\n');
   if (AI_TRAILER.test(body) || AI_NOTE.test(body)) reasons.push('PR の本文に AI の署名を付けない');
-  if (epicFlow(ctx)) reasons.push(...epicReasons(sub, args, cwd, ctx));
+  if (epicFlow(st, ctx)) reasons.push(...epicReasons(sub, args, st, ctx));
   return reasons;
 }
 
 // `--auto` も対象（必須のチェックがないリポでは即時にマージされる）
 // - epic のフローの dev/* への PR: チェックなしを許可（CI を実行せず pre-push の `pnpm check` が関門）
-function mergeReasons(args: string[], cwd: string | undefined, ctx: Context): string[] {
+function mergeReasons(args: string[], st: State, ctx: Context): string[] {
+  const { cwd } = st;
   if (args.some((a) => a === '--merge' || a === '--rebase' || a === '-m' || a === '-r')) return ['マージは squash のみ（`--squash`）'];
   const pr = positionals(args, MERGE_VALUE)[0];
   const checks = ctx.prChecks(pr, cwd);
   if (checks === 'pass') return [];
-  if (checks === 'none' && epicFlow(ctx)) {
+  if (checks === 'none' && epicFlow(st, ctx)) {
     const base = ctx.prBase(pr, cwd);
     if (base !== undefined && DEV_BRANCH.test(base)) return [];
   }
@@ -216,11 +262,11 @@ function mergeReasons(args: string[], cwd: string | undefined, ctx: Context): st
 // epic のフロー: main への PR は dev/* から、それ以外のブランチの PR は dev/* へ
 // - `gh pr create` の base の省略 = main（既定のブランチ）
 // - `gh pr edit` は base を変更する場合のみ
-function epicReasons(sub: 'create' | 'edit', args: string[], cwd: string | undefined, ctx: Context): string[] {
+function epicReasons(sub: 'create' | 'edit', args: string[], st: State, ctx: Context): string[] {
   const explicit = option(args, ['--base', '-B']);
   if (sub === 'edit' && explicit === undefined) return [];
   const base = explicit ?? 'main';
-  const head = sub === 'create' ? (option(args, ['--head', '-H'])?.replace(/^.*:/, '') ?? ctx.currentBranch(cwd)) : ctx.prHead(positionals(args, EDIT_VALUE)[0], cwd);
+  const head = sub === 'create' ? (option(args, ['--head', '-H'])?.replace(/^.*:/, '') ?? branchOf(st, ctx)) : ctx.prHead(positionals(args, EDIT_VALUE)[0], st.cwd);
   if (head !== undefined && DEV_BRANCH.test(head)) return [];
   if (PROTECTED.includes(base)) return [`\`${base}\` への PR は epic の \`dev/<issue の番号>-<内容>\` からのみ（デプロイのとき）。sub-issue の PR は \`--base dev/...\` で epic のブランチへ`];
   if (!DEV_BRANCH.test(base)) return [`PR の base は epic の \`dev/<issue の番号>-<内容>\`: \`${base}\``];
