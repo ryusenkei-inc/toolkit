@@ -8,6 +8,7 @@ Shared packages for RYUSENKEI repositories, published to npm under `@ryusenkei`.
 | --- | --- |
 | [`@ryusenkei/prose-lint`](packages/prose-lint) | Checker for mechanical errors in Japanese technical writing (comments, Markdown, commit messages) |
 | [`@ryusenkei/conventions`](packages/conventions) | Shared conventions: Claude Code rules and hooks, and sync of the shared files |
+| [`@ryusenkei/scripts`](packages/scripts) | Shared scripts: child processes, the `.env` CLI, and GitHub repository settings |
 
 ## Development
 

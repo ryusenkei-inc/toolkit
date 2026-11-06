@@ -1,0 +1,47 @@
+{
+  "name": "@ryusenkei/scripts",
+  "version": "0.1.0",
+  "description": "RYUSENKEI のリポの共通のスクリプト（子プロセスの実行、.env の配信、GitHub のリポの設定）",
+  "license": "MIT",
+  "author": "RYUSENKEI",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ryusenkei-inc/toolkit.git",
+    "directory": "packages/scripts"
+  },
+  "homepage": "https://github.com/ryusenkei-inc/toolkit/tree/main/packages/scripts",
+  "type": "module",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "bin": {
+    "ryusenkei-repo-settings": "dist/repo-settings.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "engines": {
+    "node": ">=24"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "prepublishOnly": "pnpm run build",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "cross-spawn": "^7.0.6"
+  },
+  "devDependencies": {
+    "@types/cross-spawn": "^6.0.6",
+    "@types/node": "^26.6.1",
+    "typescript": "^5.9.3"
+  }
+}

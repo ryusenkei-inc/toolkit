@@ -10,7 +10,8 @@
 
 - 秘密値はルートの `.env` にまとめ、配信は `pnpm env:push` だけで行う
 - `*.tfvars` と Terraform の state はコミットしない
-- `.env.example` に変数を足したら、`scripts/env.ts` の `TARGETS` にも定義する
+- `.env.example` に変数を足したら、`scripts/env.ts` の `targets` にも定義する。`scripts/env.ts` は `@ryusenkei/scripts` の `envCli` に配信先を渡すだけにする
+- Cloudflare のトークンはデプロイ用と Terraform 用に分ける。CI でデプロイしないなら、どちらも GitHub に配信しない
 - 環境変数を付けて実行するときは `node scripts/env.ts run NAME=value <cmd>` を使う。`NAME=value cmd` は Windows で動かない
 - YAML の拡張子は `.yaml` にする（pnpm のファイルに合わせる）
 - 共通ファイル（`.editorconfig`、`.github/dependabot.yaml`、`.claude/settings.json` など）は `@ryusenkei/conventions` から同期するので、直接編集しない。変えるときは toolkit で直し、`ryusenkei-conventions sync` で反映する
