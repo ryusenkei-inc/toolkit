@@ -1,29 +1,27 @@
 # CLAUDE.md
 
-複数のリポで共有するパッケージのモノリポ。構成・運用は [README.md](README.md)
+複数のリポで共有するパッケージのモノリポ。構成と運用は [README.md](README.md) にある。
 
 ## 規約
 
-- 構成: パッケージの一覧は README の「Packages」
-- エントリポイント: パッケージごとに `src/index.ts`。export は外部で使用するものだけ・他パッケージの再 export なし
-- 公開: npm の public。パッケージに入るのは `package.json` の `files` のみ（ビルドするパッケージは `dist`）
-  - 秘密値・個人名・特定のリポ固有の値を含めない
-- `packages/conventions` の `rules.md`・`files/`: 利用側のリポの規約・共通ファイル。このリポの作業には適用しない
-- YAML の拡張子: `.yaml`（pnpm のファイルと統一）
-- バージョン: semver。互換性のない変更は major を上げる（利用側は `^` で依存）
-- 個人名: リポに記載禁止（コード・コメント・ドキュメント・設定値・`package.json` の `author` すべて）
+- パッケージの一覧は README の「Packages」に載せる
+- エントリポイントはパッケージごとの `src/index.ts`。export するのは外部で使うものだけで、他パッケージのものを export し直さない
+- パッケージは npm に public で公開する。パッケージに入るのは `package.json` の `files` だけ（ビルドするパッケージは `dist`）
+  - 秘密値、個人名、特定のリポに固有の値を入れない
+- `packages/conventions` の `rules*.md` と `files/` は、利用する側のリポの規約と共通ファイル。このリポの作業には、書き方の節（文章を書く場所、書く量、書き方）だけを当てはめる
+- YAML の拡張子は `.yaml` にする（pnpm のファイルに合わせる）
+- バージョンは semver で上げる。利用する側は `^` で依存するので、互換性のない変更では 0.x なら minor、1.0 以降なら major を上げる
+- 個人名はリポに書かない。コード、コメント、ドキュメント、設定値、`package.json` の `author` のすべてが対象
 
-## 文体（README・コメント共通）
+## 文章
 
-- 散文より構造化（表・箇条書き・キー: 値）
-- 技術語彙（カタカナ語・漢語・漢語複合）で簡潔に
-- README: 英語（公開パッケージのため）。パッケージの README はユーザー向け、リポの README は開発・公開の手順
-- コード上の値・環境変数の参照はコードの名前で、バッククォートで囲む。ドメインの概念・説明・表示文字列は日本語
-- コメントは非自明な理由・制約のみ。`pnpm lint:prose` で確認（規則 = このリポの `packages/prose-lint`）
+- 書き方は `packages/conventions/rules.md` の「文章を書く場所」「書く量」「書き方」に従う
+- README は英語で書く（公開のパッケージのため）。パッケージの README は使う人向け、リポの README は開発と公開の手順
+- コメントと Markdown は `pnpm lint:prose` で検査する（規則はこのリポの `packages/prose-lint`）
 
 ## コミット
 
-- Conventional Commits。type・scope は英語、subject は日本語
-- subject は1行のみ。body は書かない（背景は PR に記載）
-- バージョンを上げるだけのコミット: `chore(release): <package>@<version>`（英語の定型。タグ名と同じ）
-- Claude・AI の署名・trailer 禁止
+- Conventional Commits で書く。type と scope は英語、subject は日本語
+- subject は1行だけで、body は書かない（背景は PR に書く）
+- バージョンを上げるだけのコミットは `chore(release): <package>@<version>`（英語の定型で、タグ名と同じ）
+- Claude や AI の署名、trailer を付けない
