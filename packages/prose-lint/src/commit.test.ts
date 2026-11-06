@@ -6,13 +6,13 @@ const rules = (message: string, disabled: string[] = []) => commitMessageIssues(
 describe('コミットメッセージ', () => {
   it('type・scope を除いた subject を検査する', () => {
     expect(commitMessageIssues('feat(site): OG 画像に和欧間のアキを追加する\n')).toEqual([]);
-    expect(commitMessageIssues('fix: ファイルを改名する。')).toEqual([
+    expect(commitMessageIssues('fix: 全てのファイルを削除する。')).toEqual([
       {
         line: 1,
-        text: 'ファイルを改名する。',
+        text: '全てのファイルを削除する。',
         issues: [
           { rule: 'format/period', message: '末尾に句点を付けない' },
-          { rule: 'style/vocabulary', message: '「改名」→ リネーム' },
+          { rule: 'format/notation', message: '「全て」→ すべて' },
         ],
       },
     ]);
@@ -38,7 +38,7 @@ describe('コミットメッセージ', () => {
   });
 
   it('body を許可したリポでは body の文を検査する', () => {
-    expect(rules('fix: 更新する\n\nファイルを改名する。\n', ['commit/body'])).toEqual(['3:format/period', '3:style/vocabulary']);
+    expect(rules('fix: 更新する\n\n全てのファイルを削除する。\n', ['commit/body'])).toEqual(['3:format/period', '3:format/notation']);
   });
 
   it('git が除去する行・git が生成するメッセージは対象外', () => {

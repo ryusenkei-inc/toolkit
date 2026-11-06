@@ -1,6 +1,6 @@
 // コミットメッセージの検査（git の commit-msg フック用）
 //   - 書式: Conventional Commits・subject は日本語・1行のみ（body なし）・AI の署名なし
-//   - subject の文は書式・文体の規則で判定
+//   - subject の文は書式・表記の規則で判定
 //   - `type(scope)!: ` は英語の決まった書式 → 対象外
 //   - `#` で始まる行・`--verbose` の差分（切り取り線以降）は git が除去 → 対象外
 import { JA, type Issue } from './rule.ts';
@@ -37,7 +37,7 @@ export function commitMessageIssues(message: string, options: Options = {}): { l
   // バージョンを上げるだけのコミット（`chore(release): <package>@<version>`）は英語の定型
   const release = m?.[1] === 'chore' && m[2] === 'release';
   if (on('commit/subject-ja') && !release && !JA.test(subject)) issues.push({ rule: 'commit/subject-ja', message: 'subject は日本語' });
-  if (!release) issues.push(...textIssues(subject, { ...options, sentences: 1 }));
+  if (!release) issues.push(...textIssues(subject, options));
   if (issues.length) out.push({ line: head.line, text: subject, issues });
 
   for (const { line, raw } of rest) {

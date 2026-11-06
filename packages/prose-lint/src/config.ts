@@ -6,8 +6,8 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { COMMIT_RULE_IDS } from './commit.ts';
+import { NOTATION } from './notation.ts';
 import type { Vocabulary } from './rule.ts';
-import { VOCABULARY } from './style.ts';
 import { TEXT_RULE_IDS, type Options } from './text.ts';
 
 export type Config = {
@@ -16,8 +16,8 @@ export type Config = {
   extensions: string[]; // コメントを検査する拡張子。`tf`・`py` などは `#`、ほかは `//`・`/* */`・`<!-- -->`
   skip: string; // 対象外のパス（正規表現。空 = なし）
   trailingFiles: string; // 1 フィールド 1 行・説明は行末コメントのファイル（正規表現。空 = なし）
-  vocabulary: { re: string; flags?: string; to: string }[]; // リポ固有の語彙（共通の語彙に追加）
-  allow: string[]; // 文体の判定から除外する語（正規表現。ドメインの用語など）
+  vocabulary: { re: string; flags?: string; to: string }[]; // リポ固有の表記（共通の表記に追加）
+  allow: string[]; // 表記の判定から除外する語（正規表現。ドメインの用語など）
   rules: Record<string, boolean>; // 規則の ID ごとの有効・無効（既定 = すべて有効）
 };
 
@@ -32,7 +32,7 @@ const DEFAULTS: Config = {
   rules: {},
 };
 
-export const RULE_IDS = [...TEXT_RULE_IDS, 'format/wrap', 'format/trailing-align', ...COMMIT_RULE_IDS];
+export const RULE_IDS = [...TEXT_RULE_IDS, 'format/trailing-align', ...COMMIT_RULE_IDS];
 const FILES = ['prose-lint.json', '.config/prose-lint.json'];
 
 const json = (file: string) => JSON.parse(readFileSync(file, 'utf8')) as Record<string, unknown>;
@@ -59,7 +59,7 @@ export function loadConfig(dir = '.', explicit?: string): { config: Config; sour
 
 export function textOptions(config: Config): Options & { vocabulary: Vocabulary; disabled: Set<string> } {
   return {
-    vocabulary: [...VOCABULARY, ...config.vocabulary.map((v) => ({ re: new RegExp(v.re, v.flags), to: v.to }))],
+    vocabulary: [...NOTATION, ...config.vocabulary.map((v) => ({ re: new RegExp(v.re, v.flags), to: v.to }))],
     allow: config.allow.map((re) => new RegExp(re, 'gu')),
     disabled: new Set(Object.entries(config.rules).filter(([, on]) => !on).map(([id]) => id)),
   };
