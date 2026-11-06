@@ -1,0 +1,19 @@
+
+  # Go のモジュール（ルートに go.mod があるリポのみ `sync` が追加）
+  - package-ecosystem: gomod
+    directory: "/"
+    # 頻度・rebase・公開直後のバージョンの回避は npm と同じ
+    schedule:
+      interval: monthly
+    rebase-strategy: disabled
+    cooldown:
+      default-days: 2
+    commit-message:
+      prefix: build
+      include: scope
+    groups:
+      # minor・patch は1つの PR にまとめる（Go の major はモジュールのパスが変わるため Dependabot の対象外）
+      minor-and-patch:
+        update-types:
+          - minor
+          - patch
