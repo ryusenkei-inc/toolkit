@@ -54,7 +54,7 @@ export function drifts(root: string, options: { stop?: boolean } = {}): Drift[] 
   const raw = read(join(root, SETTINGS));
   const current = raw === undefined ? {} : (JSON.parse(raw) as Settings);
   const settings = `${JSON.stringify(managedSettings(current, { stop: options.stop ?? hasStop(current) }), null, 2)}\n`;
-  if (raw !== settings) out.push({ path: SETTINGS, expected: settings, message: 'hook・`attribution`・`permissions.deny` が不一致' });
+  if (raw !== settings) out.push({ path: SETTINGS, expected: settings, message: 'hook・`attribution`・`permissions.deny`・プラグインが不一致' });
 
   const workspace = read(join(root, WORKSPACE)) ?? '';
   if (!workspace.includes(RELEASE_AGE.slice(1).join('\n'))) {

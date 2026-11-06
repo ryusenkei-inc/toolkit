@@ -22,6 +22,14 @@ describe('managedSettings', () => {
     expect(s.attribution).toEqual({ commit: '', pr: '', sessionUrl: false });
   });
 
+  it('文章の見直しのプラグインを有効化し、リポの無効化・独自のプラグインは維持', () => {
+    const s = managedSettings(current, { stop: false });
+    expect(Object.keys(s.extraKnownMarketplaces as object)).toEqual(['yomiyasu', 'humanizer']);
+    expect(s.enabledPlugins).toEqual({ 'yomiyasu@yomiyasu': true, 'humanizer@humanizer': true });
+    const own = managedSettings({ ...current, enabledPlugins: { 'humanizer@humanizer': false, 'x@y': true } }, { stop: false });
+    expect(own.enabledPlugins).toEqual({ 'yomiyasu@yomiyasu': true, 'humanizer@humanizer': false, 'x@y': true });
+  });
+
   it('再適用で変化しない', () => {
     const once = managedSettings(current, { stop: true });
     expect(managedSettings(once, { stop: true })).toEqual(once);
