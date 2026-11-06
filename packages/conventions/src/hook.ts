@@ -5,8 +5,8 @@
 // - hook 自体の失敗は終了コード1（拒否にしない → 作業を継続）
 import { spawnSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { homedir, tmpdir } from 'node:os';
+import { isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { denyReason, type Checks, type ToolUse } from './policy.ts';
 
@@ -18,7 +18,7 @@ const root = process.env.CLAUDE_PROJECT_DIR ?? input.cwd ?? process.cwd();
 const shell = process.platform === 'win32';
 
 if (input.hook_event_name === 'PreToolUse') {
-  const reason = denyReason(input, { root, titleIssues, readFile, currentBranch, prHead, prBase, prChecks });
+  const reason = denyReason(input, { root, repoRoot, resolveDir, titleIssues, readFile, currentBranch, prHead, prBase, prChecks });
   if (reason) {
     process.stderr.write(`${reason}\n`);
     process.exit(2);
@@ -27,14 +27,14 @@ if (input.hook_event_name === 'PreToolUse') {
   stop();
 }
 
-// PR のタイトル = squash のコミットのメッセージ → prose-lint のコミットの規則で検査（リポの `prose-lint.json` を反映）
-function titleIssues(title: string): string[] {
+// PR のタイトル = squash のコミットのメッセージ → prose-lint のコミットの規則で検査（対象のリポの `prose-lint.json` を反映）
+function titleIssues(title: string, cwd: string | undefined): string[] {
   const dir = mkdtempSync(join(tmpdir(), 'conventions-'));
   try {
     const file = join(dir, 'title');
     writeFileSync(file, `${title}\n`);
     const cli = fileURLToPath(new URL('./cli.js', import.meta.resolve('@ryusenkei/prose-lint')));
-    const r = spawnSync(process.execPath, [cli, '--commit-msg', file], { cwd: root, encoding: 'utf8' });
+    const r = spawnSync(process.execPath, [cli, '--commit-msg', file], { cwd: repoRoot(cwd) ?? root, encoding: 'utf8' });
     return r.status === 0 ? [] : [`${r.stdout}${r.stderr}`.trim()];
   } finally {
     rmSync(dir, { recursive: true, force: true });
@@ -47,6 +47,20 @@ function readFile(path: string): string | undefined {
   } catch {
     return undefined;
   }
+}
+
+function repoRoot(cwd: string | undefined): string | undefined {
+  const r = spawnSync('git', ['rev-parse', '--show-toplevel'], { cwd: cwd ?? root, encoding: 'utf8' });
+  return (r.status === 0 && r.stdout.trim()) || undefined;
+}
+
+// 変数・コマンド置換・`cd -` は解決しない
+// Git Bash の `/c/...` は Windows のパス `C:/...` に変換
+function resolveDir(base: string | undefined, dir: string): string | undefined {
+  if (dir === '-' || /[$`]/.test(dir)) return undefined;
+  const home = dir === '~' || dir.startsWith('~/') ? join(homedir(), dir.slice(1)) : dir;
+  const native = process.platform === 'win32' ? home.replace(/^\/([a-zA-Z])(?=\/|$)/, '$1:') : home;
+  return isAbsolute(native) ? resolve(native) : resolve(base ?? root, native);
 }
 
 function currentBranch(cwd: string | undefined): string | undefined {
