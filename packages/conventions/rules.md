@@ -1,11 +1,9 @@
 ## コード
 
-- パッケージの責務と依存は、README の構成の表に従う
+- パッケージ・クレートの責務と依存は、README の構成の表に従う
 - リポ内で共有するコードは `packages/*` に置く。リポをまたぐものは toolkit（npm の `@ryusenkei/*`）に置き、変更も toolkit で行う
-- エントリポイントはパッケージごとの `src/index.ts`。export するのは外部で使うものだけで、他パッケージの再 export はしない
-- TypeScript はビルドせず、Node で直接実行する（`node scripts/x.ts`）
-- テストは Vitest で書き、対象と同じディレクトリに `*.test.ts` を置く
-- 子プロセスは `scripts/lib/exec.ts` の `exec` で起動する。Windows の `.cmd` に対応するため
+- エントリポイントでは外部で使うものだけを公開し、他パッケージのものを公開し直さない
+- テストは対象の近くに置く。言語ごとの置き方は `rules-ts.md`・`rules-go.md`・`rules-rust.md`
 - 依存の更新は Dependabot の PR で行う。月1回で自動の rebase はしないので、マージの前に手で rebase する
 
 ## 設定と秘密値

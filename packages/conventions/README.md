@@ -5,6 +5,7 @@ Shared conventions for RYUSENKEI monorepos created from monorepo-template. Rules
 | Part | What it does |
 | --- | --- |
 | [`rules.md`](rules.md) | Rules for Claude Code, imported from each repository's `CLAUDE.md` (Japanese) |
+| [`rules-ts.md`](rules-ts.md), [`rules-go.md`](rules-go.md), [`rules-rust.md`](rules-rust.md), [`rules-ui.md`](rules-ui.md) | Rules for one language or for UI code, imported only where they apply |
 | `dist/hook.js` | Claude Code hook: blocks tool calls that break the rules, and optionally runs lint and tests before Claude finishes |
 | `files/` | Master copies of the shared files, synced into each repository |
 | `ryusenkei-conventions` | CLI: `sync` writes the shared files, `check` reports drift |
@@ -31,6 +32,7 @@ Requires Node.js 24 or later.
    - Repository-specific rules
 
    @node_modules/@ryusenkei/conventions/rules.md
+   @node_modules/@ryusenkei/conventions/rules-ts.md
    ```
 
 2. Write the shared files: `npx ryusenkei-conventions sync` (add `--stop` to run lint and tests before Claude finishes).
@@ -91,7 +93,16 @@ Opt in per repository in the root `package.json`:
   - The writing plugins are [yomiyasu](https://github.com/nanaism/yomiyasu) (Japanese) and [humanizer](https://github.com/blader/humanizer) (English). `extraKnownMarketplaces` registers their marketplaces and `enabledPlugins` turns them on. They load after you trust the folder, with no separate install. They are not bundled, and they do not auto-update; run `/plugin` to update them. To turn one off in a repository, set it to `false` in `enabledPlugins`
 - `pnpm-workspace.yaml`: `minimumReleaseAge` and `minimumReleaseAgeExclude`, matching the Dependabot `cooldown`
 
-`check` also reports a missing `rules.md` import in `CLAUDE.md`.
+`check` also reports a missing `rules.md` import in `CLAUDE.md`, and the imports of the language and UI rules a repository needs:
+
+| Rules | Required when |
+| --- | --- |
+| `rules-ts.md` | `tsconfig.json` at the root |
+| `rules-go.md` | `go.mod` at the root |
+| `rules-rust.md` | `Cargo.toml` at the root |
+| `rules-ui.md` | `"ryusenkei": { "ui": true }` in the root `package.json` |
+
+When the `rules.md` import is present, `sync` adds the missing ones right after it.
 
 Dependabot runs monthly with `rebase-strategy: disabled` to save GitHub Actions minutes, so rebase a Dependabot PR (`@dependabot rebase`) before merging it. The `cooldown` excludes `@ryusenkei/*`. To pick up a new version sooner, run `pnpm update "@ryusenkei/*"`. After an update, `check` fails until `sync` is run.
 

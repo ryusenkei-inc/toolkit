@@ -27,6 +27,21 @@ const SETTINGS = '.claude/settings.json';
 const WORKSPACE = 'pnpm-workspace.yaml';
 /** CLAUDE.md で共通の規約を読み込む import */
 export const IMPORT = '@node_modules/@ryusenkei/conventions/rules.md';
+// 言語・UI の規約: 条件に合うリポだけ import を求める（UI は `package.json` の `"ryusenkei": { "ui": true }` で opt-in）
+const LANG_RULES: { file: string; if: (root: string) => boolean }[] = [
+  { file: 'rules-ts.md', if: (root) => existsSync(join(root, 'tsconfig.json')) },
+  { file: 'rules-go.md', if: (root) => existsSync(join(root, 'go.mod')) },
+  { file: 'rules-rust.md', if: (root) => existsSync(join(root, 'Cargo.toml')) },
+  { file: 'rules-ui.md', if: (root) => uiOptIn(root) },
+];
+
+function uiOptIn(root: string): boolean {
+  try {
+    return (JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')) as { ryusenkei?: { ui?: unknown } }).ryusenkei?.ui === true;
+  } catch {
+    return false;
+  }
+}
 // `.github/dependabot.yaml` の `cooldown` と同値
 const RELEASE_AGE = [
   '# 公開から2日未満のバージョンは解決しない（`.github/dependabot.yaml` の `cooldown` と同値）',
@@ -63,7 +78,11 @@ export function drifts(root: string, options: { stop?: boolean } = {}): Drift[] 
   }
 
   const claude = read(join(root, 'CLAUDE.md')) ?? '';
-  if (!claude.split('\n').some((l) => l.trim() === IMPORT)) out.push({ path: 'CLAUDE.md', message: `共通の規約の import（\`${IMPORT}\`）を追加` });
+  const lines = claude.split('\n');
+  const at = lines.findIndex((l) => l.trim() === IMPORT);
+  const missing = LANG_RULES.filter((r) => r.if(root)).map((r) => IMPORT.replace('rules.md', r.file)).filter((line) => !lines.some((l) => l.trim() === line));
+  if (at === -1) out.push({ path: 'CLAUDE.md', message: `共通の規約の import（\`${[IMPORT, ...missing].join('`・`')}\`）を追加` });
+  else if (missing.length) out.push({ path: 'CLAUDE.md', expected: [...lines.slice(0, at + 1), ...missing, ...lines.slice(at + 1)].join('\n'), message: `規約の import（\`${missing.join('`・`')}\`）が不足` });
   return out;
 }
 
