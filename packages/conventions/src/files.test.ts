@@ -33,6 +33,17 @@ describe('sync・drifts', () => {
     expect(drifts(root, { stop: false }).map((d) => d.path)).toEqual(['.claude/settings.json']);
   });
 
+  it('go.mod があるリポのみ Dependabot に gomod を追加', () => {
+    const dependabot = join(root, '.github/dependabot.yaml');
+    sync(root);
+    expect(readFileSync(dependabot, 'utf8')).not.toMatch(/gomod/);
+    writeFileSync(join(root, 'go.mod'), 'module example.com/x\n');
+    expect(drifts(root).map((d) => d.path)).toEqual(['.github/dependabot.yaml']);
+    sync(root);
+    expect(readFileSync(dependabot, 'utf8')).toMatch(/\n {2}- package-ecosystem: gomod\n/);
+    expect(drifts(root)).toEqual([]);
+  });
+
   it('自動で修正できない差分', () => {
     writeFileSync(join(root, 'CLAUDE.md'), '# CLAUDE.md\n');
     writeFileSync(join(root, 'pnpm-workspace.yaml'), 'minimumReleaseAge: 60\n');
