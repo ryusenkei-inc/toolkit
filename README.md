@@ -10,6 +10,12 @@ Shared packages for RYUSENKEI repositories, published to npm under `@ryusenkei`.
 | [`@ryusenkei/conventions`](packages/conventions) | Shared conventions: Claude Code rules and hooks, and sync of the shared files |
 | [`@ryusenkei/scripts`](packages/scripts) | Shared scripts: child processes, the `.env` CLI, and GitHub repository settings |
 
+Runtime libraries for apps on Cloudflare Workers and Vercel live in `packages/runtime/` and are released together with one version:
+
+| Package | Description |
+| --- | --- |
+| [`@ryusenkei/core`](packages/runtime/core) | `Result`, typed infrastructure errors and their responses, structured logging |
+
 ## Development
 
 ```sh
@@ -36,6 +42,10 @@ Publishing runs on GitHub Actions when a tag `<package>@<version>` is pushed. It
    ```
 
 The workflow runs `pnpm lint` and `pnpm test`, verifies that the tag matches `version`, and publishes the package.
+
+The runtime libraries share one version. Bump `version` in every `packages/runtime/*/package.json` and push a `runtime@<version>` tag; the workflow checks that all of them match and publishes each one that is not on npm yet. `pnpm lint` checks that the versions match and that the sources contain no company-specific values (IDs, email addresses, URLs outside an allowlist, the company name).
+
+A new package can't use trusted publishing until it exists on npm. Publish its first version once by hand (`pnpm publish` from the package directory, signed in to npm), then add the trusted publisher on npmjs.com (`ryusenkei-inc` / `toolkit` / `publish.yaml`, with `npm publish` allowed).
 
 ## License
 
