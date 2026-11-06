@@ -60,7 +60,7 @@ Generated files are skipped, and `--fix` leaves them unchanged. A file counts as
 | `format/paren-width` | Full-width parentheses in Japanese text (use backticks for code) |
 | `format/colon` | Half-width colon (`キー: 値`) |
 | `format/spacing` | A space around words that contain letters, none around numbers (`D1 の上限`, `16人`) |
-| `format/notation` | One spelling per word: long vowels (`サーバー`, `ユーザー`, `マスタ`), and kana for words usually written in kana (`すべて`, `できる`, `など`). Repository-specific spellings go in `vocabulary` |
+| `format/notation` | One spelling per word: long vowels (`サーバー`, `ユーザー`, `マスタ`), kana for words usually written in kana (`すべて`, `できる`, `など`), and established terms (`版` → `バージョン`, only in the version sense). Repository-specific spellings go in `vocabulary` |
 | `format/length` | Comment lines up to 100 characters (Markdown is not wrapped, so it is not checked). A URL counts as one character, since it can't be wrapped |
 | `format/trailing-align` | Trailing comments in a block start at the same column |
 | `commit/format` | `type(scope): subject` with a standard type and a lowercase scope |

@@ -42,6 +42,11 @@ describe('文章の書式', () => {
     for (const [t, w] of [['出来れば', '出来れ'], ['出来ず', '出来ず'], ['次の様だ', 'の様だ'], ['A 等）', '等'], ['A 等と B', '等']] as const) expect(textIssues(t).some((i) => i.startsWith(`「${w}」`))).toBe(true);
   });
 
+  it('バージョンの意味の「版」だけを指摘する', () => {
+    for (const t of ['版を上げる', '同じ版に上書き', 'タグと版の一致', '最新の版を取得', '版ごとに記録']) expect(textIssues(t).some((i) => i.endsWith('→ バージョン'))).toBe(true);
+    for (const t of ['出版社の記事', '初版の発行', 'Web 版と iOS 版', '日本語版のドキュメント', '図版の差し替え', 'Web 版の違い', '言語版ごと', '出版番号', '最新版を取得']) expect(textIssues(t)).toEqual([]);
+  });
+
   it('構造の記号・URL・メールアドレスを詰めない', () => {
     for (const t of ['1. 取得の手順', '日本 - 説明', '値 -> 結果', 'https://example.com/?q=x日本', 'dev@example.com宛て']) expect(fixSpacing(t)).toBe(t);
   });
