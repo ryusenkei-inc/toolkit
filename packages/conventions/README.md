@@ -83,6 +83,7 @@ Opt in per repository in the root `package.json`:
 
 - `.editorconfig`, `.gitattributes`, `.gitignore`, `.gitleaks.toml`, `mise.toml`, `.github/dependabot.yaml`, `.githooks/commit-msg`, `.githooks/pre-push`
 - `.github/dependabot.yaml` updates npm and GitHub Actions. When the repository has a `go.mod` at the root, a `gomod` entry is appended (same schedule, rebase strategy and cooldown, minor and patch grouped). Without one it is left out, because Dependabot fails on a missing `go.mod`
+- When the repository has a `Cargo.toml` at the root, a `cargo` entry is appended to `.github/dependabot.yaml` after any `gomod` entry (same settings as `gomod`, covering workspace members), and `target/` is appended to `.gitignore`. `Cargo.lock` stays tracked
 - `.claude/settings.json`: only the hooks, `attribution`, and `permissions.deny` are managed. Other settings and hooks are kept
 - `pnpm-workspace.yaml`: `minimumReleaseAge` and `minimumReleaseAgeExclude`, matching the Dependabot `cooldown`
 

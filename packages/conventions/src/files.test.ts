@@ -44,6 +44,29 @@ describe('sync・drifts', () => {
     expect(drifts(root)).toEqual([]);
   });
 
+  it('Cargo.toml があるリポのみ Dependabot に cargo・.gitignore に target/ を追加', () => {
+    const dependabot = join(root, '.github/dependabot.yaml');
+    const gitignore = join(root, '.gitignore');
+    sync(root);
+    expect(readFileSync(dependabot, 'utf8')).not.toMatch(/cargo/);
+    expect(readFileSync(gitignore, 'utf8')).not.toMatch(/^target\/$/m);
+    writeFileSync(join(root, 'Cargo.toml'), '[workspace]\n');
+    expect(drifts(root).map((d) => d.path)).toEqual(['.gitignore', '.github/dependabot.yaml']);
+    sync(root);
+    expect(readFileSync(dependabot, 'utf8')).toMatch(/\n {2}- package-ecosystem: cargo\n/);
+    expect(readFileSync(gitignore, 'utf8')).toMatch(/\ntarget\/\n$/);
+    expect(drifts(root)).toEqual([]);
+  });
+
+  it('条件のファイルが複数あるリポは記載の順に追加', () => {
+    writeFileSync(join(root, 'go.mod'), 'module example.com/x\n');
+    writeFileSync(join(root, 'Cargo.toml'), '[workspace]\n');
+    sync(root);
+    const dependabot = readFileSync(join(root, '.github/dependabot.yaml'), 'utf8');
+    expect(dependabot.indexOf('package-ecosystem: gomod')).toBeLessThan(dependabot.indexOf('package-ecosystem: cargo'));
+    expect(drifts(root)).toEqual([]);
+  });
+
   it('自動で修正できない差分', () => {
     writeFileSync(join(root, 'CLAUDE.md'), '# CLAUDE.md\n');
     writeFileSync(join(root, 'pnpm-workspace.yaml'), 'minimumReleaseAge: 60\n');

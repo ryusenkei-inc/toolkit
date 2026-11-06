@@ -1,18 +1,25 @@
 // 利用側のリポにある共通ファイルの同期・検査
 // - マスタ: パッケージの `files/`（npm は `.gitignore` を同梱しない → 先頭の `.` を除いた名前で格納）
 // - 比較は改行コードを LF に正規化（Windows の作業ツリーは CRLF になりうる）
-// - `append`: 条件のファイルがあるリポのみ末尾に追加（例: go.mod のないリポで gomod の更新はエラー）
+// - `append`: 条件のファイルがあるリポのみ、記載の順に末尾に追加（例: go.mod のないリポで gomod の更新はエラー）
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { hasStop, managedSettings, type Settings } from './settings.ts';
 
-const FILES: { from: string; to: string; mode?: number; append?: { from: string; if: string } }[] = [
+const FILES: { from: string; to: string; mode?: number; append?: { from: string; if: string }[] }[] = [
   { from: 'editorconfig', to: '.editorconfig' },
   { from: 'gitattributes', to: '.gitattributes' },
-  { from: 'gitignore', to: '.gitignore' },
+  { from: 'gitignore', to: '.gitignore', append: [{ from: 'gitignore-cargo', if: 'Cargo.toml' }] },
   { from: 'gitleaks.toml', to: '.gitleaks.toml' },
   { from: 'mise.toml', to: 'mise.toml' },
-  { from: 'dependabot.yaml', to: '.github/dependabot.yaml', append: { from: 'dependabot-gomod.yaml', if: 'go.mod' } },
+  {
+    from: 'dependabot.yaml',
+    to: '.github/dependabot.yaml',
+    append: [
+      { from: 'dependabot-gomod.yaml', if: 'go.mod' },
+      { from: 'dependabot-cargo.yaml', if: 'Cargo.toml' },
+    ],
+  },
   { from: 'commit-msg', to: '.githooks/commit-msg', mode: 0o755 },
   { from: 'pre-push', to: '.githooks/pre-push', mode: 0o755 },
 ];
@@ -39,7 +46,8 @@ const master = (name: string) => lf(readFileSync(new URL(`../files/${name}`, imp
 export function drifts(root: string, options: { stop?: boolean } = {}): Drift[] {
   const out: Drift[] = [];
   for (const f of FILES) {
-    const expected = master(f.from) + (f.append && existsSync(join(root, f.append.if)) ? master(f.append.from) : '');
+    const appended = (f.append ?? []).filter((a) => existsSync(join(root, a.if))).map((a) => master(a.from));
+    const expected = master(f.from) + appended.join('');
     if (read(join(root, f.to)) !== expected) out.push({ path: f.to, expected, message: 'マスタと不一致' });
   }
 
