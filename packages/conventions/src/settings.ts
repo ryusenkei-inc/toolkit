@@ -1,6 +1,6 @@
 // `.claude/settings.json` の管理する項目
-// - hook の登録・`attribution`・`permissions.deny`
-// - リポ独自の設定・hook は維持
+// - hook の登録・`attribution`・`permissions.deny`・文章の見直しのプラグイン（yomiyasu・humanizer）
+// - リポ独自の設定・hook は維持。プラグインはリポで `false` にすれば無効のまま
 
 type Hook = { type: string; command: string; args?: string[] };
 type Group = { matcher?: string; hooks: Hook[] };
@@ -17,6 +17,13 @@ const HOOK: Hook = { type: 'command', command: 'node', args: [HOOK_PATH] };
 const PROSE_LINT: Hook = { type: 'command', command: 'npx --no -- prose-lint --hook' };
 // 秘密値のファイル（`.env.example` は対象外 → `.env.*` の指定は不可）
 const DENY = ['Read(./**/.env)', 'Read(./**/.dev.vars)'];
+// 同梱せずマーケットプレイスから読み込む（ライセンスの表示に個人名を含むため）
+// `autoUpdate` は既定の `false`（第三者のマーケットプレイス）→ 上流の変更は各自の更新の操作まで入らない
+const MARKETPLACES = {
+  yomiyasu: { source: { source: 'github', repo: 'nanaism/yomiyasu' } },
+  humanizer: { source: { source: 'github', repo: 'blader/humanizer' } },
+};
+const PLUGINS = { 'yomiyasu@yomiyasu': true, 'humanizer@humanizer': true };
 
 const owned = (h: Hook) => (h.command === 'node' && h.args?.[0] === HOOK_PATH) || h.command.includes('prose-lint --hook');
 
@@ -38,6 +45,8 @@ export function managedSettings(current: Settings, options: { stop: boolean }): 
     ...current,
     attribution: { commit: '', pr: '', sessionUrl: false },
     permissions: { ...current.permissions, deny },
+    extraKnownMarketplaces: { ...(current.extraKnownMarketplaces as object | undefined), ...MARKETPLACES },
+    enabledPlugins: { ...PLUGINS, ...(current.enabledPlugins as object | undefined) },
     hooks,
   };
 }

@@ -87,7 +87,8 @@ Opt in per repository in the root `package.json`:
 - `.editorconfig`, `.gitattributes`, `.gitignore`, `.gitleaks.toml`, `mise.toml`, `.github/dependabot.yaml`, `.githooks/commit-msg`, `.githooks/pre-push`
 - `.github/dependabot.yaml` updates npm and GitHub Actions. When the repository has a `go.mod` at the root, a `gomod` entry is appended (same schedule, rebase strategy and cooldown, minor and patch grouped). Without one it is left out, because Dependabot fails on a missing `go.mod`
 - When the repository has a `Cargo.toml` at the root, a `cargo` entry is appended to `.github/dependabot.yaml` after any `gomod` entry (same settings as `gomod`, covering workspace members), and `target/` is appended to `.gitignore`. `Cargo.lock` stays tracked
-- `.claude/settings.json`: only the hooks, `attribution`, and `permissions.deny` are managed. Other settings and hooks are kept
+- `.claude/settings.json`: only the hooks, `attribution`, `permissions.deny`, and the writing plugins are managed. Other settings, hooks, and plugins are kept
+  - The writing plugins are [yomiyasu](https://github.com/nanaism/yomiyasu) (Japanese) and [humanizer](https://github.com/blader/humanizer) (English). `extraKnownMarketplaces` registers their marketplaces and `enabledPlugins` turns them on. They load after you trust the folder, with no separate install. They are not bundled, and they do not auto-update; run `/plugin` to update them. To turn one off in a repository, set it to `false` in `enabledPlugins`
 - `pnpm-workspace.yaml`: `minimumReleaseAge` and `minimumReleaseAgeExclude`, matching the Dependabot `cooldown`
 
 `check` also reports a missing `rules.md` import in `CLAUDE.md`.
