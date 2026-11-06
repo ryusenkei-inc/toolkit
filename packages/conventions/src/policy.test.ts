@@ -97,6 +97,7 @@ describe('PR', () => {
   });
   it('squash 以外のマージを拒否', () => {
     expect(bash('gh pr merge 3 --merge')).toMatch('squash');
+    expect(bash('gh pr merge 3 --rebase')).toMatch('rebase');
     expect(bash('gh pr merge 3 --squash --delete-branch')).toBeUndefined();
   });
   it('CI の成功を確認できない PR のマージを拒否', () => {
@@ -159,6 +160,16 @@ describe('epic のフロー', () => {
     expect(bash('gh pr edit 3 --body x', epic())).toBeUndefined();
     expect(bash('gh pr edit 3 --base main', epic())).toMatch('`main` への PR');
     expect(bash('gh pr edit 7 --base main', epic())).toBeUndefined();
+  });
+  it('dev のブランチから main へは merge commit、それ以外は squash', () => {
+    const toMain = context({ epic: true, base: 'main' });
+    expect(bash('gh pr merge 7 --merge', toMain)).toBeUndefined();
+    expect(bash('gh pr merge 7 --squash', toMain)).toMatch('`--merge`');
+    expect(bash('gh pr merge 7 --rebase', toMain)).toMatch('rebase');
+    expect(bash('gh pr merge 3 --merge', toMain)).toMatch('squash');
+    expect(bash('gh pr merge 3 --merge', context({ epic: true, base: 'dev/12-search' }))).toMatch('squash');
+    // epic のフローを有効にしていないリポは常に squash
+    expect(bash('gh pr merge 7 --merge', context({ base: 'main' }))).toMatch('squash');
   });
 });
 

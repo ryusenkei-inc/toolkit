@@ -52,7 +52,7 @@ The PreToolUse hook blocks the call and tells Claude why, so Claude can fix it a
 | No force push to `main` / `master` | Blocks `git push --force` / `-f` / `--force-with-lease` and `+<refspec>` targeting `main` or `master` (also the current branch when no refspec is given) |
 | PR title = squash commit message | Checks `gh pr create` / `gh pr edit` titles with prose-lint's commit rules |
 | No AI signature | `attribution` is empty, and the hook blocks PR bodies with an AI signature |
-| Squash merge only | Blocks `gh pr merge --merge` / `--rebase` |
+| Squash merge | Blocks `gh pr merge --rebase`, and `--merge` except for a `dev/*` → `main` PR with the epic flow, which must use `--merge` |
 | Merge only after CI passes | Blocks `gh pr merge` unless every check of the PR has passed (`gh pr checks`). Pending, failed, missing, or unreadable checks are blocked, also with `--auto` (with the epic flow, a PR into `dev/*` may have no checks) |
 | Epic flow (opt-in) | See [Epic flow](#epic-flow) |
 | Do not edit `node_modules` | Blocks Edit and Write under `node_modules` |
@@ -76,6 +76,7 @@ Opt in per repository in the root `package.json`:
 - Each epic gets an integration branch `dev/<issue>-<name>` (e.g. `dev/12-search`). Sub-issue PRs target it, and only a `dev/*` branch is merged into `main` (on deploy).
 - `gh pr create` to `main` (`--base main`, or no `--base`) is blocked unless the head (`--head`, or the current branch) is `dev/*`.
 - A PR from any other branch must target a `dev/*` base. `gh pr edit` is checked only when it changes `--base`.
+- A `dev/*` → `main` PR is merged with a merge commit (`gh pr merge --merge`), not squashed. This keeps one commit per sub-issue on `main`, and keeps `dev/*` and `main` from diverging when work continues on the epic after a deploy. Turn on "Allow merge commits" in the repository settings.
 - A PR into `dev/*` runs no CI; the pre-push `pnpm check` is the gate. `gh pr merge` allows such a PR with no checks, but any checks it has must still pass.
 - Without the opt-in, none of this applies and `dev/*` branch names are rejected.
 
