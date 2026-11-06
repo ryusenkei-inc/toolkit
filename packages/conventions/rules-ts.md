@@ -3,7 +3,7 @@
 - エントリポイントはパッケージごとの `src/index.ts`
 - TypeScript はビルドせず、Node で直接実行する（`node scripts/x.ts`）
 - テストは Vitest で書き、対象と同じディレクトリに `*.test.ts` を置く
-- 子プロセスは `scripts/lib/exec.ts` の `exec` で起動する。Windows の `.cmd` に対応するため
+- 子プロセスは `@ryusenkei/scripts` の `exec` で起動する。Windows の `.cmd` に対応するため
 
 ## 定数
 
