@@ -16,14 +16,10 @@ Runtime libraries for apps on Cloudflare Workers and Vercel live in `packages/ru
 | --- | --- |
 | [`@ryusenkei/core`](packages/runtime/core) | `Result`, typed infrastructure errors and their responses, structured logging |
 | [`@ryusenkei/form`](packages/runtime/form) | Forms (contact, feedback): field declarations, sanitizing, validation, and a standard `Request => Response` handler with delivery by email or webhook |
-| [`@ryusenkei/rate-limit`](packages/runtime/rate-limit) | Port: rate limiting per key |
-| [`@ryusenkei/bot-check`](packages/runtime/bot-check) | Port: checking that a form was sent by a person |
-| [`@ryusenkei/mail`](packages/runtime/mail) | Port: sending email, with the shared input check |
-| [`@ryusenkei/blob`](packages/runtime/blob) | Port: storing files by key |
-| [`@ryusenkei/auth`](packages/runtime/auth) | Port: authenticating the user of a request |
-| [`@ryusenkei/adapter-cloudflare`](packages/runtime/adapter-cloudflare) | Workers bindings: Rate Limiting, Email Service, R2 |
-| [`@ryusenkei/adapter-turnstile`](packages/runtime/adapter-turnstile) | Turnstile for `bot-check` |
-| [`@ryusenkei/adapter-access`](packages/runtime/adapter-access) | Cloudflare Access JWT for `auth` |
+| [`@ryusenkei/mail`](packages/runtime/mail) | The shape of an email, the `Mailer` interface, and the checks every sender runs |
+| [`@ryusenkei/adapter-cloudflare`](packages/runtime/adapter-cloudflare) | Workers bindings: Rate Limiting and Email Service |
+| [`@ryusenkei/adapter-turnstile`](packages/runtime/adapter-turnstile) | Turnstile's server-side check |
+| [`@ryusenkei/adapter-access`](packages/runtime/adapter-access) | Cloudflare Access JWT verification, for admin pages and service tokens |
 
 ## Development
 

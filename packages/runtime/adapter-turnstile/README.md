@@ -1,6 +1,6 @@
 # @ryusenkei/adapter-turnstile
 
-A [`BotCheck`](../bot-check) implementation with Cloudflare Turnstile. It works anywhere `fetch` does (Workers, Vercel, Node).
+Cloudflare Turnstile's server-side check, as the bot check that `@ryusenkei/form` uses. It works anywhere `fetch` does (Workers, Vercel, Node).
 
 ## Install
 
@@ -27,7 +27,7 @@ It calls siteverify with the secret, the token, and the IP address, then checks:
 | The issuing hostname is not in `hostnames` | `hostname_mismatch` |
 | `action` is given and differs from the token's | `action_mismatch` |
 | Missing or invalid secret | throws `ConfigError` |
-| siteverify is unreachable, returns non-2xx, or reports `internal-error` | throws `TransientError` |
+| siteverify is unreachable, times out (5 seconds by default, `timeoutMs`), returns non-2xx or an unreadable body, or reports `internal-error` | throws `TransientError` |
 
 ## Test keys
 

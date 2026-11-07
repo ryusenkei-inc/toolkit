@@ -1,7 +1,7 @@
 {
   "name": "@ryusenkei/mail",
   "version": "0.1.0",
-  "description": "メール送信の差し込み口（型、エラーコード、入力の検査、メモリの実装、契約テスト）",
+  "description": "メール送信の型と、宛先・ヘッダーの検査（メモリの実装付き）",
   "license": "MIT",
   "author": "RYUSENKEI",
   "repository": {
@@ -21,10 +21,6 @@
     "./testing": {
       "types": "./dist/testing.d.ts",
       "default": "./dist/testing.js"
-    },
-    "./contract": {
-      "types": "./dist/contract.d.ts",
-      "default": "./dist/contract.js"
     }
   },
   "files": [
@@ -41,14 +37,6 @@
   },
   "dependencies": {
     "@ryusenkei/core": "workspace:^0.1.0"
-  },
-  "peerDependencies": {
-    "vitest": ">=3"
-  },
-  "peerDependenciesMeta": {
-    "vitest": {
-      "optional": true
-    }
   },
   "devDependencies": {
     "typescript": "^5.9.3"

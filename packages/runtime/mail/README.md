@@ -1,6 +1,6 @@
 # @ryusenkei/mail
 
-The port for sending email: the `Mailer` interface, its error codes, an in-memory implementation, and a contract test. No runtime dependencies besides `@ryusenkei/core`. Implementations for a provider live in the `adapter-*` packages.
+The shared shape of an email (`Mail`, `MailAddress`), the `Mailer` interface, and the checks every sender runs before sending. Senders for a provider live elsewhere (for example, `cloudflareMailer` in `@ryusenkei/adapter-cloudflare`); `@ryusenkei/form` uses the interface for its mail destination.
 
 ## Install
 
@@ -10,26 +10,26 @@ pnpm add @ryusenkei/mail
 
 ## Interface
 
-`send({ from, to, replyTo?, subject, text, html? })` returns the provider message ID.
-
-- Business failures come back as `Result` with these codes: `invalid_input` (malformed address, or a line break in a header field, which blocks header injection), `rejected`
-- Infrastructure failures are thrown as `TransientError` (may succeed on retry) or `ConfigError` (a missing setting), from `@ryusenkei/core`
-
-`validateMail(mail)` is the shared input check. Every implementation runs it before sending.
-
 ```ts
-const sent = await services.mailer.send({ from, to: [owner], subject, text });
-if (!sent.ok) log('warn', 'mail_rejected', { error: sent.error });
+type Mail = { from: MailAddress; to: MailAddress[]; replyTo?: MailAddress; subject: string; text: string; html?: string };
+interface Mailer { send(mail: Mail): Promise<Result<{ id: string | undefined }, 'invalid_input' | 'rejected'>> }
 ```
+
+- `invalid_input`: a malformed address, no recipient, or a line break in a header field (blocks header injection).
+- `rejected`: the provider would not deliver it (a suppressed recipient, a delivery failure).
+- Infrastructure failures are thrown as `TransientError` or `ConfigError` from `@ryusenkei/core`.
+
+## Checks
+
+- `validateMail(mail)` is what every sender runs before sending. It rejects:
+  - CR, LF, NUL, U+0085, U+2028, and U+2029 in the subject or a display name
+  - addresses that fail `isEmailAddress`
+  - an empty `to`
+- `isEmailAddress(value)` is deliberately loose (not full RFC 5322). It rejects whitespace and `< > ( ) " , ; :`. `@ryusenkei/form` uses the same check, so an address that passes the form is never rejected at send time.
 
 ## Testing
 
-| Entry | Contents |
-| --- | --- |
-| `@ryusenkei/mail/testing` | `memoryMailer()`: keeps sent mail in `outbox`. For tests and local development; keep it out of production code |
-| `@ryusenkei/mail/contract` | `mailerContract(name, make, mail)`: the behavior every implementation must have, as Vitest tests. Run it against each adapter |
-
-The contract imports `vitest`, so it is a separate entry from the in-memory implementation, which local development can use without Vitest.
+`memoryMailer()` from `@ryusenkei/mail/testing` validates, then keeps sent mail in `outbox`.
 
 ## License
 

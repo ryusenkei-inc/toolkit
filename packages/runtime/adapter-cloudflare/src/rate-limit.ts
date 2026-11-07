@@ -1,5 +1,7 @@
-import { ConfigError, err, ok, TransientError } from '@ryusenkei/core';
-import type { RateLimiter } from '@ryusenkei/rate-limit';
+import { ConfigError, err, ok, TransientError, type Result } from '@ryusenkei/core';
+
+/** キー（IP アドレスなど）ごとの回数の制限（`@ryusenkei/form/server` の `rateLimiter` に渡せる） */
+export type RateLimiter = Readonly<{ limit(key: string): Promise<Result<void, 'rate_limited'>> }>;
 
 /** Workers の Rate Limiting の binding（使う部分だけの型。`@cloudflare/workers-types` に依存しない） */
 export type RateLimitBinding = { limit(options: { key: string }): Promise<{ success: boolean }> };

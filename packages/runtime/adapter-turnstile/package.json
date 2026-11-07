@@ -32,8 +32,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@ryusenkei/core": "workspace:^0.1.0",
-    "@ryusenkei/bot-check": "workspace:^0.1.0"
+    "@ryusenkei/core": "workspace:^0.1.0"
   },
   "devDependencies": {
     "typescript": "^5.9.3"
