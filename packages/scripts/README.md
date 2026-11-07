@@ -25,17 +25,14 @@ await envCli({
     TURNSTILE_SECRET_KEY: ['wrangler:secret:site'],
     CF_TERRAFORM_TOKEN: [],
   },
-  commands: {
-    // Terraform gets its own token, separate from the deploy token
-    tf: (args, ctx) => ctx.run(['terraform', ...args], { CLOUDFLARE_API_TOKEN: ctx.values().CF_TERRAFORM_TOKEN }),
-  },
+  terraform: { stateBucket: 'company-tfstate', stateKeyPrefix: 'example' },
 });
 ```
 
 ```sh
 node scripts/env.ts run [NAME=value ...] <command> [...args]
 node scripts/env.ts push [--dry-run] [--only <target prefix>]
-node scripts/env.ts tf plan    # a command from `commands`
+node scripts/env.ts tf -chdir=infra/stacks/site init   # Terraform, with `terraform` set
 ```
 
 | Subcommand | What it does |
@@ -52,6 +49,15 @@ Targets:
 | `wrangler:secret:<worker>` | `pnpm exec wrangler secret put <KEY> --name <worker>` |
 
 A key with an empty list stays local (for example, a token only used by `run`).
+
+## Terraform (`tf`)
+
+With `terraform: { stateBucket, stateKeyPrefix, tokenVar? }`, `tf` runs `terraform` prepared for a partial S3 backend (`backend "s3" {}`) on R2:
+
+- `CLOUDFLARE_API_TOKEN` is set from the Terraform token (`CF_TERRAFORM_TOKEN` by default), kept separate from the deploy token.
+- `AWS_ENDPOINT_URL_S3` points at the account's R2 (`CLOUDFLARE_ACCOUNT_ID`).
+- The R2 credentials are derived from the token (`AWS_ACCESS_KEY_ID` is the token's ID, `AWS_SECRET_ACCESS_KEY` the SHA-256 of its value), unless `.env` sets them explicitly.
+- `init` gets the backend settings: the bucket, the key `<stateKeyPrefix>/<stack directory name>.tfstate` (from `-chdir`), `use_lockfile=true` for state locking, and the S3 checks R2 doesn't support turned off.
 
 `commands` adds repository-specific subcommands. Each one gets `ctx.values()` (the `.env` values) and `ctx.run(args, extra)` (like `run`, with extra variables on top of `.env`).
 

@@ -1,6 +1,6 @@
 {
   "name": "@ryusenkei/scripts",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "RYUSENKEI のリポの共通のスクリプト（子プロセスの実行、.env の配信、GitHub のリポの設定）",
   "license": "MIT",
   "author": "RYUSENKEI",
