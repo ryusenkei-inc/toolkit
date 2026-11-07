@@ -1,6 +1,6 @@
 {
   "name": "@ryusenkei/adapter-turnstile",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "bot の判定の Turnstile による実装（siteverify、ホスト名・action の照合、テスト用の鍵）",
   "license": "MIT",
   "author": "RYUSENKEI",
@@ -32,7 +32,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@ryusenkei/core": "workspace:^0.1.0"
+    "@ryusenkei/core": "workspace:^0.2.0"
   },
   "devDependencies": {
     "typescript": "^5.9.3"
