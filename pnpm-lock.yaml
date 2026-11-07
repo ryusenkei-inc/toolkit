@@ -130,6 +130,19 @@ importers:
         specifier: ^5.9.3
         version: 5.9.3
 
+  packages/runtime/form:
+    dependencies:
+      '@ryusenkei/core':
+        specifier: workspace:^0.1.0
+        version: link:../core
+      '@ryusenkei/mail':
+        specifier: workspace:^0.1.0
+        version: link:../mail
+    devDependencies:
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+
   packages/runtime/mail:
     dependencies:
       '@ryusenkei/core':

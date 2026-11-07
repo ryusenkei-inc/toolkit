@@ -15,6 +15,7 @@ Runtime libraries for apps on Cloudflare Workers and Vercel live in `packages/ru
 | Package | Description |
 | --- | --- |
 | [`@ryusenkei/core`](packages/runtime/core) | `Result`, typed infrastructure errors and their responses, structured logging |
+| [`@ryusenkei/form`](packages/runtime/form) | Forms (contact, feedback): field declarations, sanitizing, validation, and a standard `Request => Response` handler with delivery by email or webhook |
 | [`@ryusenkei/rate-limit`](packages/runtime/rate-limit) | Port: rate limiting per key |
 | [`@ryusenkei/bot-check`](packages/runtime/bot-check) | Port: checking that a form was sent by a person |
 | [`@ryusenkei/mail`](packages/runtime/mail) | Port: sending email, with the shared input check |
