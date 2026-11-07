@@ -27,6 +27,10 @@ const packages = readdirSync(ROOT).filter((name) => statSync(join(ROOT, name)).i
 const versions = new Map(packages.map((name) => [name, (JSON.parse(readFileSync(join(ROOT, name, 'package.json'), 'utf8')) as { version: string }).version]));
 if (new Set(versions.values()).size > 1) problems.push(`バージョンが不一致: ${[...versions].map(([n, v]) => `${n}@${v}`).join('、')}`);
 
+// ビルドの生成物（ビルドの設定の誤りで src に出た .js・.d.ts）
+const all = (dir: string): string[] => readdirSync(dir).flatMap((name) => (statSync(join(dir, name)).isDirectory() ? all(join(dir, name)) : [join(dir, name)]));
+for (const file of packages.flatMap((name) => all(join(ROOT, name, 'src')))) if (/\.(js|d\.ts)$/.test(file)) problems.push(`${file.replaceAll('\\', '/')}: src の中のビルドの生成物`);
+
 for (const file of packages.flatMap((name) => files(join(ROOT, name, 'src')))) {
   readFileSync(file, 'utf8')
     .split(/\r?\n/)
