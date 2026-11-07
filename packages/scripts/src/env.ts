@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { parseEnv } from 'node:util';
 import { exec } from './exec.ts';
 import { currentRepo } from './repo.ts';
+import { backendConfigArgs, r2CredentialsOf, stackOf, stateKeyOf, type TerraformConfig } from './terraform.ts';
 
 /** 配信先。`wrangler:secret:<worker>` は Worker の秘密値（`wrangler secret put --name <worker>`） */
 export type Target = 'github:variable' | 'github:secret' | `wrangler:secret:${string}`;
@@ -26,8 +27,10 @@ export type EnvConfig = {
   root: string | URL;
   /** 変数ごとの配信先（配信しない変数は空配列） */
   targets: Record<string, Target[]>;
-  /** リポ独自のサブコマンド（例: `tf`、`deploy`） */
+  /** リポ独自のサブコマンド（例: `deploy`） */
   commands?: Record<string, (args: string[], ctx: EnvContext) => number | Promise<number>>;
+  /** 指定すると `tf` のサブコマンドを足す（Terraform 用のトークン、R2 の state の認証と backend の設定） */
+  terraform?: TerraformConfig;
 };
 
 const ASSIGN = /^[A-Z_][A-Z0-9_]*=/;
@@ -93,9 +96,32 @@ export async function envCli(config: EnvConfig, argv = process.argv.slice(2)): P
     return failed ? 1 : 0;
   };
 
+  // terraform を Terraform 用のトークンで実行する。init には backend の設定を足す
+  const tf = async (args: string[]): Promise<number> => {
+    const tfConfig = config.terraform!;
+    const env = values();
+    const tokenVar = tfConfig.tokenVar ?? 'CF_TERRAFORM_TOKEN';
+    const token = env[tokenVar];
+    const accountId = env.CLOUDFLARE_ACCOUNT_ID;
+    if (!token || !accountId) {
+      console.error(`${!token ? tokenVar : 'CLOUDFLARE_ACCOUNT_ID'} が未設定（.env に設定）`);
+      return 1;
+    }
+    const extra: EnvValues = { CLOUDFLARE_API_TOKEN: token, AWS_ENDPOINT_URL_S3: env.AWS_ENDPOINT_URL_S3 ?? `https://${accountId}.r2.cloudflarestorage.com` };
+    if (!(env.AWS_ACCESS_KEY_ID && env.AWS_SECRET_ACCESS_KEY)) {
+      const credentials = await r2CredentialsOf(token, accountId);
+      if (credentials) Object.assign(extra, credentials);
+      else console.warn('R2 の認証をトークンから導出できない（.env に AWS_ACCESS_KEY_ID・AWS_SECRET_ACCESS_KEY を設定）');
+    }
+    const stack = stackOf(args);
+    const withBackend = stack.subcommand === 'init' ? [...args.slice(0, stack.index + 1), ...backendConfigArgs(tfConfig.stateBucket, stateKeyOf(tfConfig.stateKeyPrefix, stack.dir, process.cwd())), ...args.slice(stack.index + 1)] : args;
+    return run(['terraform', ...withBackend], extra);
+  };
+
   const commands: Record<string, (args: string[]) => number | Promise<number>> = {
     run: (args) => run(args),
     push,
+    ...(config.terraform && { tf }),
     ...Object.fromEntries(Object.entries(config.commands ?? {}).map(([name, fn]) => [name, (args: string[]) => fn(args, ctx)])),
   };
   const [subcommand, ...rest] = argv;
