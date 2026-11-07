@@ -16,6 +16,7 @@ Runtime libraries for apps on Cloudflare Workers and Vercel live in `packages/ru
 | --- | --- |
 | [`@ryusenkei/core`](packages/runtime/core) | `Result`, typed infrastructure errors and their responses, structured logging |
 | [`@ryusenkei/form`](packages/runtime/form) | Forms (contact, feedback): field declarations, sanitizing, validation, and a standard `Request => Response` handler with delivery by email or webhook |
+| [`@ryusenkei/legal`](packages/runtime/legal) | Privacy policy, 特定商取引法 notice, and operator details built from a declaration, as structured data |
 | [`@ryusenkei/mail`](packages/runtime/mail) | The shape of an email, the `Mailer` interface, and the checks every sender runs |
 | [`@ryusenkei/adapter-cloudflare`](packages/runtime/adapter-cloudflare) | Workers bindings: Rate Limiting and Email Service |
 | [`@ryusenkei/adapter-turnstile`](packages/runtime/adapter-turnstile) | Turnstile's server-side check |
