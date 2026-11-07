@@ -1,4 +1,3 @@
-import { botCheckContract } from '@ryusenkei/bot-check/contract';
 import { ConfigError, TransientError } from '@ryusenkei/core';
 import { describe, expect, it } from 'vitest';
 import { TURNSTILE_TEST_KEYS, turnstileBotCheck } from './index.ts';
@@ -14,11 +13,20 @@ const fakeFetch = (respond: (form: FormData) => Response | Promise<Response>) =>
 };
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
 
-botCheckContract(
-  'turnstileBotCheck',
-  () => turnstileBotCheck({ secret: 'secret', hostnames: ['app.example.com'], fetch: fakeFetch((form) => json(form.get('response') === 'good' ? { success: true, hostname: 'app.example.com' } : { success: false, 'error-codes': ['invalid-input-response'] })) }),
-  { valid: 'good', invalid: 'bad' },
-);
+describe('判定の結果', () => {
+  const check = () => turnstileBotCheck({ secret: 'secret', hostnames: ['app.example.com'], fetch: fakeFetch((form) => json(form.get('response') === 'good' ? { success: true, hostname: 'app.example.com' } : { success: false, 'error-codes': ['invalid-input-response'] })) });
+
+  it('正しいトークンは通し、ないトークンは missing_token、不正なトークンは rejected', async () => {
+    expect(await check().verify({ token: 'good' })).toEqual({ ok: true, value: undefined });
+    for (const token of [undefined, null, '']) expect(await check().verify({ token })).toEqual({ ok: false, error: 'missing_token' });
+    expect(await check().verify({ token: 'bad' })).toEqual({ ok: false, error: 'rejected' });
+  });
+
+  it('時間切れと読めない応答は TransientError', async () => {
+    await expect(turnstileBotCheck({ secret: 's', hostnames: [], fetch: fakeFetch(() => Promise.reject(new DOMException('t', 'TimeoutError'))) }).verify({ token: 't' })).rejects.toBeInstanceOf(TransientError);
+    await expect(turnstileBotCheck({ secret: 's', hostnames: [], fetch: fakeFetch(() => new Response('<html>')) }).verify({ token: 't' })).rejects.toBeInstanceOf(TransientError);
+  });
+});
 
 describe('turnstileBotCheck', () => {
   it('秘密鍵・トークン・IP アドレスを送る', async () => {

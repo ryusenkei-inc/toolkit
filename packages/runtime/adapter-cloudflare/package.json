@@ -1,7 +1,7 @@
 {
   "name": "@ryusenkei/adapter-cloudflare",
   "version": "0.1.0",
-  "description": "差し込み口の Cloudflare Workers の binding による実装（回数の制限、メール送信、R2）",
+  "description": "Cloudflare Workers の binding による実装（回数の制限、メール送信）",
   "license": "MIT",
   "author": "RYUSENKEI",
   "repository": {
@@ -33,9 +33,7 @@
   },
   "dependencies": {
     "@ryusenkei/core": "workspace:^0.1.0",
-    "@ryusenkei/rate-limit": "workspace:^0.1.0",
-    "@ryusenkei/mail": "workspace:^0.1.0",
-    "@ryusenkei/blob": "workspace:^0.1.0"
+    "@ryusenkei/mail": "workspace:^0.1.0"
   },
   "devDependencies": {
     "typescript": "^5.9.3"
