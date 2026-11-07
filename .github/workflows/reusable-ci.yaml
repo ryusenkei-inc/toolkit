@@ -10,6 +10,10 @@ on:
         description: 標準の検査の後に実行するコマンド（リポ独自の検査）
         type: string
         default: ''
+      terraform:
+        description: fmt と validate で検査する Terraform のディレクトリ（空白区切り。Terraform は呼ぶ側の mise.toml）
+        type: string
+        default: ''
 
 permissions:
   contents: read
@@ -32,6 +36,17 @@ jobs:
         run: pnpm test
       - name: Prose lint
         run: pnpm lint:prose
+      # backend なしで検査（state と認証は要らない）
+      - name: Terraform
+        if: inputs.terraform != ''
+        env:
+          DIRS: ${{ inputs.terraform }}
+        run: |
+          for dir in $DIRS; do
+            terraform fmt -check -recursive "$dir"
+            terraform -chdir="$dir" init -backend=false -input=false >/dev/null
+            terraform -chdir="$dir" validate
+          done
       - name: Checks
         if: inputs.checks != ''
         env:

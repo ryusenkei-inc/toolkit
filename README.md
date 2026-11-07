@@ -31,6 +31,10 @@ pnpm test      # unit tests
 pnpm build     # build dist/ for each package
 ```
 
+## Terraform modules
+
+`terraform/modules/` has small modules for DNS records, Turnstile widgets, Access applications, and www redirects. They are referenced by Git with `terraform-v<version>` tags; see the [Terraform README](terraform/README.md).
+
 ## Reusable workflows
 
 `.github/workflows/reusable-ci.yaml` and `reusable-pr-title.yaml` are the CI of the other repositories. The [conventions README](packages/conventions/README.md#ci) shows how to call them.

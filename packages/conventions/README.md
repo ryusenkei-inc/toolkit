@@ -186,6 +186,7 @@ jobs:
 | `reusable-ci.yaml` | Checkout (full history), mise, pnpm, `pnpm install --frozen-lockfile`, `pnpm typecheck`, `pnpm test`, `pnpm lint:prose`, the `checks` input, the PR title with prose-lint's commit rules (not for Dependabot), and a gitleaks scan with `.gitleaks.toml` |
 | `reusable-pr-title.yaml` | Re-checks the PR title when it is edited, with the `@ryusenkei/prose-lint` version from `package.json` and no install |
 
+- `terraform`: space-separated directories to check with `terraform fmt -check` and `validate` (no backend, so no credentials). Terraform comes from the caller's `mise.toml`.
 - Language jobs (Go, Rust) stay in the calling workflow as extra jobs.
 - PR title edits run in their own workflow. In the same workflow, the later `edited` run would overwrite the `ci` job's result with "skipped" and hide a failure.
 - `@main` follows toolkit's `main`, so fixes reach every repository at once. A breaking change gets a new file name instead of changing these.
