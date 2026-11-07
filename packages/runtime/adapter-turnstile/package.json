@@ -1,6 +1,6 @@
 {
   "name": "@ryusenkei/adapter-turnstile",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "bot の判定の Turnstile による実装（siteverify、ホスト名・action の照合、テスト用の鍵）",
   "license": "MIT",
   "author": "RYUSENKEI",
