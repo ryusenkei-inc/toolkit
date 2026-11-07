@@ -1,13 +1,17 @@
-import { log } from './log.ts';
+/** 再試行までの秒の既定（`Retry-After`） */
+export const DEFAULT_RETRY_AFTER_SEC = 5;
+// Durable Object の過負荷は、再起動より回復に時間がかかる
+const OVERLOADED_RETRY_AFTER_SEC = 10;
 
 /** 再試行で回復しうる基盤の失敗（外部の API の一時的な障害、回数の上限など） */
 export class TransientError extends Error {
   override readonly name = 'TransientError';
-  /** 再試行までの秒数（不明なら `undefined`） */
+  /** 再試行までの秒（未指定なら分類のときに `DEFAULT_RETRY_AFTER_SEC`） */
   readonly retryAfterSec: number | undefined;
   constructor(message: string, options: { retryAfterSec?: number; cause?: unknown } = {}) {
     super(message, { cause: options.cause });
-    this.retryAfterSec = options.retryAfterSec;
+    const sec = options.retryAfterSec;
+    this.retryAfterSec = sec !== undefined && Number.isFinite(sec) && sec >= 0 ? sec : undefined;
   }
 }
 
@@ -22,28 +26,30 @@ export class ConfigError extends Error {
   }
 }
 
-/** 境界で分類した基盤の失敗 */
-export type Failure =
-  | { status: 503; code: 'unavailable'; retryAfterSec: number | undefined }
-  | { status: 503; code: 'not_configured' }
-  | { status: 500; code: 'internal' };
+/** 例外の分類（HTTP に限らず、キューやスケジュールの処理でも使う） */
+export type FailureKind = Readonly<{ kind: 'transient'; retryAfterSec: number }> | Readonly<{ kind: 'config' }> | Readonly<{ kind: 'unknown' }>;
 
-export function classifyFailure(e: unknown): Failure {
-  if (e instanceof TransientError) return { status: 503, code: 'unavailable', retryAfterSec: e.retryAfterSec };
-  if (e instanceof ConfigError) return { status: 503, code: 'not_configured' };
-  return { status: 500, code: 'internal' };
-}
+const flag = (e: unknown, key: 'retryable' | 'overloaded') => typeof e === 'object' && e !== null && (e as Record<string, unknown>)[key] === true;
+const nameOf = (e: unknown) => (typeof e === 'object' && e !== null ? (e as { name?: unknown }).name : undefined);
 
 /**
- * 例外を分類してログに出し、JSON の応答（`{ "error": <code> }`）に変える
- * - 一時的な失敗は `Retry-After` を付ける
- * - 想定外の例外は `error` で報告し、設定の不足は `warn`
+ * 例外を分類する
+ * - Durable Object の RPC の例外は `retryable`・`overloaded` が `true` なら一時的（Cloudflare の仕様）
+ * - fetch の時間切れ・中断（`TimeoutError`・`AbortError`）は一時的
  */
-export function failureResponse(e: unknown, init: { headers?: HeadersInit } = {}): Response {
-  const failure = classifyFailure(e);
-  log(failure.code === 'internal' ? 'error' : 'warn', failure.code, { error: e });
-  const headers = new Headers(init.headers);
-  headers.set('content-type', 'application/json');
-  if (failure.code === 'unavailable' && failure.retryAfterSec !== undefined) headers.set('retry-after', String(Math.ceil(failure.retryAfterSec)));
-  return new Response(JSON.stringify({ error: failure.code }), { status: failure.status, headers });
+export function classifyFailure(e: unknown): FailureKind {
+  if (e instanceof ConfigError) return { kind: 'config' };
+  if (e instanceof TransientError) return { kind: 'transient', retryAfterSec: e.retryAfterSec ?? DEFAULT_RETRY_AFTER_SEC };
+  if (flag(e, 'overloaded')) return { kind: 'transient', retryAfterSec: OVERLOADED_RETRY_AFTER_SEC };
+  if (flag(e, 'retryable')) return { kind: 'transient', retryAfterSec: DEFAULT_RETRY_AFTER_SEC };
+  const name = nameOf(e);
+  if (name === 'TimeoutError' || name === 'AbortError') return { kind: 'transient', retryAfterSec: DEFAULT_RETRY_AFTER_SEC };
+  return { kind: 'unknown' };
+}
+
+/** 一時的な失敗として包む。型つきの例外はそのまま返し、ほかは元の例外を `cause` に持つ */
+export function asTransient(e: unknown, message: string): TransientError | ConfigError {
+  if (e instanceof TransientError || e instanceof ConfigError) return e;
+  const c = classifyFailure(e);
+  return new TransientError(message, { cause: e, ...(c.kind === 'transient' && { retryAfterSec: c.retryAfterSec }) });
 }
