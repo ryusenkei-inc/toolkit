@@ -1,6 +1,6 @@
 {
   "name": "@ryusenkei/legal",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "法務の本文（プライバシーポリシー、特定商取引法の表記、運営者の表示）を宣言から組み立てる",
   "license": "MIT",
   "author": "RYUSENKEI",

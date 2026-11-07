@@ -43,7 +43,7 @@ importers:
   packages/runtime/adapter-access:
     dependencies:
       '@ryusenkei/core':
-        specifier: workspace:^0.1.0
+        specifier: workspace:^0.2.0
         version: link:../core
     devDependencies:
       typescript:
@@ -53,10 +53,10 @@ importers:
   packages/runtime/adapter-cloudflare:
     dependencies:
       '@ryusenkei/core':
-        specifier: workspace:^0.1.0
+        specifier: workspace:^0.2.0
         version: link:../core
       '@ryusenkei/mail':
-        specifier: workspace:^0.1.0
+        specifier: workspace:^0.2.0
         version: link:../mail
     devDependencies:
       typescript:
@@ -66,7 +66,7 @@ importers:
   packages/runtime/adapter-turnstile:
     dependencies:
       '@ryusenkei/core':
-        specifier: workspace:^0.1.0
+        specifier: workspace:^0.2.0
         version: link:../core
     devDependencies:
       typescript:
@@ -82,10 +82,10 @@ importers:
   packages/runtime/form:
     dependencies:
       '@ryusenkei/core':
-        specifier: workspace:^0.1.0
+        specifier: workspace:^0.2.0
         version: link:../core
       '@ryusenkei/mail':
-        specifier: workspace:^0.1.0
+        specifier: workspace:^0.2.0
         version: link:../mail
     devDependencies:
       typescript:
@@ -101,7 +101,7 @@ importers:
   packages/runtime/mail:
     dependencies:
       '@ryusenkei/core':
-        specifier: workspace:^0.1.0
+        specifier: workspace:^0.2.0
         version: link:../core
     devDependencies:
       typescript:

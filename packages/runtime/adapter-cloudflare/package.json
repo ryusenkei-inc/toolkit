@@ -1,6 +1,6 @@
 {
   "name": "@ryusenkei/adapter-cloudflare",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Cloudflare Workers の binding による実装（回数の制限、メール送信）",
   "license": "MIT",
   "author": "RYUSENKEI",
@@ -32,8 +32,8 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@ryusenkei/core": "workspace:^0.1.0",
-    "@ryusenkei/mail": "workspace:^0.1.0"
+    "@ryusenkei/core": "workspace:^0.2.0",
+    "@ryusenkei/mail": "workspace:^0.2.0"
   },
   "devDependencies": {
     "typescript": "^5.9.3"
