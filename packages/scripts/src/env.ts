@@ -44,7 +44,7 @@ export function splitAssignments(args: string[]): { env: EnvValues; command: str
 export function pushPlan(values: EnvValues, targets: Record<string, Target[]>, only?: string): { skips: string[]; items: { key: string; target: Target; value: string }[] } {
   const skips = Object.keys(values)
     .filter((k) => !(k in targets))
-    .map((k) => `${k}: 配信先が未定義（TARGETS に追加）`);
+    .map((k) => `${k}: 配信先が未定義（scripts/env.ts の targets に追加）`);
   const items: { key: string; target: Target; value: string }[] = [];
   for (const [key, list] of Object.entries(targets)) {
     const chosen = list.filter((t) => only === undefined || t.startsWith(only));

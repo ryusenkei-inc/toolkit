@@ -15,7 +15,7 @@ describe('pushPlan', () => {
   it('配信先ごとに展開し、未定義・未設定の変数は飛ばす', () => {
     const plan = pushPlan({ TOKEN: 't', ID: '', LOCAL: 'x', EXTRA: 'e' }, targets);
     expect(plan.items.map((i) => `${i.key} ${i.target}`)).toEqual(['TOKEN github:secret', 'TOKEN wrangler:secret:api']);
-    expect(plan.skips).toEqual(['EXTRA: 配信先が未定義（TARGETS に追加）', 'ID: 値が未設定']);
+    expect(plan.skips).toEqual(['EXTRA: 配信先が未定義（scripts/env.ts の targets に追加）', 'ID: 値が未設定']);
   });
 
   it('`only` は配信先の前方一致', () => {
