@@ -34,5 +34,8 @@ jobs:
             test "$version" = "$actual" || { echo "タグ $version と ${dir}package.json $actual が不一致"; exit 1; }
           done
           echo "FILTER=$filter" >> "$GITHUB_ENV"
+      # 公開の前にまとめてビルドする。publish は公開済みのパッケージを飛ばし、その prepublishOnly（ビルド）も走らないので、
+      # 依存先が公開済みだと依存元のビルドが型を見つけられない
+      - run: pnpm -r --filter "$FILTER..." build
       # 公開済みのバージョンは飛ばす（まとめての公開の途中で失敗したときの再実行）
       - run: pnpm -r --filter "$FILTER" publish --no-git-checks
