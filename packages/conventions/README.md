@@ -107,6 +107,39 @@ When the `rules.md` import is present, `sync` adds the missing ones right after 
 
 Dependabot runs monthly with `rebase-strategy: disabled` to save GitHub Actions minutes, so rebase a Dependabot PR (`@dependabot rebase`) before merging it. The `cooldown` excludes `@ryusenkei/*`. To pick up a new version sooner, run `pnpm update "@ryusenkei/*"`. After an update, `check` fails until `sync` is run.
 
+## Dependency direction
+
+`runDepsCheck` checks imports in the sources and the dependencies in each `package.json` against the layer rules of the repository. Each repository keeps only its rules:
+
+```ts
+// scripts/deps.ts
+import { runDepsCheck } from '@ryusenkei/conventions';
+import { EXCEPTIONS, RULES } from './lib/deps-rules.ts';
+
+runDepsCheck({ rules: RULES, exceptions: EXCEPTIONS });
+```
+
+```ts
+// scripts/lib/deps-rules.ts
+import type { Exception, Rule } from '@ryusenkei/conventions';
+
+export const RULES: Rule[] = [
+  { name: 'core', paths: ['packages/core'], allow: [], deny: ['cloudflare:', 'node:', '@vercel/'] },
+  { name: 'adapters', paths: ['packages/adapter-*'], allow: ['packages/core'] },
+  { name: 'app', paths: ['apps/*'], allow: ['packages/core', 'packages/adapter-*'] },
+];
+export const EXCEPTIONS: Exception[] = [];
+```
+
+| Field | Meaning |
+| --- | --- |
+| `paths` | Paths the rule covers, from the repository root. `*` matches within one path segment. The most specific match wins |
+| `allow` | Paths the covered files may import. The same rule and the same package are always allowed |
+| `deny` | Prefixes of external modules the covered files may not import |
+| `EXCEPTIONS` | `{ from, to }` pairs allowed despite the rules |
+
+It reads tracked and unignored files, `.ts`/`.js` variants and `.astro` (front matter and `<script>`), and fails when a workspace package has no rule. It needs `typescript` (a peer dependency), which only this check loads.
+
 ## CI
 
 The CI lives in toolkit as reusable workflows, so each repository only keeps the triggers:
