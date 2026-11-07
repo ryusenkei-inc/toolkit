@@ -39,6 +39,17 @@ jobs:
         run: pnpm lint:prose
       - name: Runtime packages
         run: node scripts/check-runtime.ts
+      - uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_wrapper: false
+      # モジュールは backend なしで検査（provider の取得だけ）
+      - name: Terraform modules
+        run: |
+          terraform fmt -check -recursive terraform
+          for dir in terraform/modules/*/; do
+            terraform -chdir="$dir" init -backend=false -input=false >/dev/null
+            terraform -chdir="$dir" validate
+          done
       # squash merge → main のコミットのメッセージ = PR のタイトル（手元の commit-msg フックの対象外）
       #   タイトルは環境変数で受け渡し（式の展開によるコマンドの注入を防止）
       #   Dependabot の PR は英語の定型のタイトル → 対象外

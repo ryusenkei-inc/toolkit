@@ -1,0 +1,6 @@
+# モジュールの検査（init・validate）の生成物。provider の版の固定は、モジュールを呼ぶ側のスタックが持つ
+.terraform/
+.terraform.lock.hcl
+*.tfstate
+*.tfstate.*
+*.tfvars
