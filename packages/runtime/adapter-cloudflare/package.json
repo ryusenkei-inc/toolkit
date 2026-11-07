@@ -1,0 +1,43 @@
+{
+  "name": "@ryusenkei/adapter-cloudflare",
+  "version": "0.1.0",
+  "description": "差し込み口の Cloudflare Workers の binding による実装（回数の制限、メール送信、R2）",
+  "license": "MIT",
+  "author": "RYUSENKEI",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ryusenkei-inc/toolkit.git",
+    "directory": "packages/runtime/adapter-cloudflare"
+  },
+  "homepage": "https://github.com/ryusenkei-inc/toolkit/tree/main/packages/runtime/adapter-cloudflare",
+  "type": "module",
+  "sideEffects": false,
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "prepublishOnly": "pnpm run build",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@ryusenkei/core": "workspace:^0.1.0",
+    "@ryusenkei/rate-limit": "workspace:^0.1.0",
+    "@ryusenkei/mail": "workspace:^0.1.0",
+    "@ryusenkei/blob": "workspace:^0.1.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3"
+  }
+}

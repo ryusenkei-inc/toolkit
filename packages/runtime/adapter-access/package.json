@@ -1,0 +1,41 @@
+{
+  "name": "@ryusenkei/adapter-access",
+  "version": "0.1.0",
+  "description": "認証の Cloudflare Access による実装（JWT の署名・aud・iss・期限の検証）",
+  "license": "MIT",
+  "author": "RYUSENKEI",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ryusenkei-inc/toolkit.git",
+    "directory": "packages/runtime/adapter-access"
+  },
+  "homepage": "https://github.com/ryusenkei-inc/toolkit/tree/main/packages/runtime/adapter-access",
+  "type": "module",
+  "sideEffects": false,
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "prepublishOnly": "pnpm run build",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@ryusenkei/core": "workspace:^0.1.0",
+    "@ryusenkei/auth": "workspace:^0.1.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3"
+  }
+}

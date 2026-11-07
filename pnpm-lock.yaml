@@ -40,6 +40,51 @@ importers:
         specifier: ^5.9.3
         version: 5.9.3
 
+  packages/runtime/adapter-access:
+    dependencies:
+      '@ryusenkei/auth':
+        specifier: workspace:^0.1.0
+        version: link:../auth
+      '@ryusenkei/core':
+        specifier: workspace:^0.1.0
+        version: link:../core
+    devDependencies:
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+
+  packages/runtime/adapter-cloudflare:
+    dependencies:
+      '@ryusenkei/blob':
+        specifier: workspace:^0.1.0
+        version: link:../blob
+      '@ryusenkei/core':
+        specifier: workspace:^0.1.0
+        version: link:../core
+      '@ryusenkei/mail':
+        specifier: workspace:^0.1.0
+        version: link:../mail
+      '@ryusenkei/rate-limit':
+        specifier: workspace:^0.1.0
+        version: link:../rate-limit
+    devDependencies:
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+
+  packages/runtime/adapter-turnstile:
+    dependencies:
+      '@ryusenkei/bot-check':
+        specifier: workspace:^0.1.0
+        version: link:../bot-check
+      '@ryusenkei/core':
+        specifier: workspace:^0.1.0
+        version: link:../core
+    devDependencies:
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+
   packages/runtime/auth:
     dependencies:
       '@ryusenkei/core':

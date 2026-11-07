@@ -20,6 +20,9 @@ Runtime libraries for apps on Cloudflare Workers and Vercel live in `packages/ru
 | [`@ryusenkei/mail`](packages/runtime/mail) | Port: sending email, with the shared input check |
 | [`@ryusenkei/blob`](packages/runtime/blob) | Port: storing files by key |
 | [`@ryusenkei/auth`](packages/runtime/auth) | Port: authenticating the user of a request |
+| [`@ryusenkei/adapter-cloudflare`](packages/runtime/adapter-cloudflare) | Workers bindings: Rate Limiting, Email Service, R2 |
+| [`@ryusenkei/adapter-turnstile`](packages/runtime/adapter-turnstile) | Turnstile for `bot-check` |
+| [`@ryusenkei/adapter-access`](packages/runtime/adapter-access) | Cloudflare Access JWT for `auth` |
 
 ## Development
 
