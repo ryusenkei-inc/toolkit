@@ -89,6 +89,13 @@ export function drifts(root: string, options: { stop?: boolean } = {}): Drift[] 
     else out.push({ path: WORKSPACE, expected: `${workspace.trimEnd()}\n\n${RELEASE_AGE.join('\n')}\n`, message: '`minimumReleaseAge` が未設定' });
   }
 
+  // pre-push の関門は `pnpm check`（`check` がないと何も検査されずに push される）
+  let scripts: Record<string, unknown> = {};
+  try {
+    scripts = (JSON.parse(read(join(root, 'package.json')) ?? '{}') as { scripts?: Record<string, unknown> }).scripts ?? {};
+  } catch {}
+  if (typeof scripts.check !== 'string') out.push({ path: 'package.json', message: '`check` の script を追加（pre-push で動かす検査。型検査、テスト、lint など）' });
+
   const claude = read(join(root, 'CLAUDE.md')) ?? '';
   const lines = claude.split('\n');
   const at = lines.findIndex((l) => l.trim() === IMPORT);

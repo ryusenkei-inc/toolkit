@@ -106,6 +106,8 @@ Opt in per repository in the root `package.json`:
 
 When the `rules.md` import is present, `sync` adds the missing ones right after it.
 
+`check` also reports a root `package.json` without a `check` script, since the pre-push hook runs `pnpm check` and pushes unchecked without one. Add it by hand (for example `pnpm typecheck && pnpm test && pnpm lint:prose && ryusenkei-conventions check`).
+
 Dependabot runs monthly with `rebase-strategy: disabled` to save GitHub Actions minutes, so rebase a Dependabot PR (`@dependabot rebase`) before merging it. The `cooldown` excludes `@ryusenkei/*`. To pick up a new version sooner, run `pnpm update "@ryusenkei/*"`. After an update, `check` fails until `sync` is run.
 
 ## Dependency direction
