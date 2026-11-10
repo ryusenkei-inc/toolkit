@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -65,6 +65,16 @@ describe('sync・drifts', () => {
     sync(root);
     const dependabot = readFileSync(join(root, '.github/dependabot.yaml'), 'utf8');
     expect(dependabot.indexOf('package-ecosystem: gomod')).toBeLessThan(dependabot.indexOf('package-ecosystem: cargo'));
+    expect(drifts(root)).toEqual([]);
+  });
+
+  it('`"dependabot": false` のリポでは Dependabot の設定を配らず削除', () => {
+    const dependabot = join(root, '.github/dependabot.yaml');
+    sync(root);
+    writeFileSync(join(root, 'package.json'), JSON.stringify({ ryusenkei: { dependabot: false } }));
+    expect(drifts(root)).toEqual([{ path: '.github/dependabot.yaml', expected: null, message: expect.stringMatching(/削除/) }]);
+    expect(sync(root)).toEqual([]);
+    expect(existsSync(dependabot)).toBe(false);
     expect(drifts(root)).toEqual([]);
   });
 

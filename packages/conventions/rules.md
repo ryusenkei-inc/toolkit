@@ -6,6 +6,7 @@
 - テストは対象の近くに置く。言語ごとの置き方は `rules-ts.md`・`rules-go.md`・`rules-rust.md`
 - テストで git を動かすときは、`GIT_DIR` などの git の環境変数を外す。フックから動くと、呼び出し元のリポを書き換える
 - 依存の更新は Dependabot の PR で行う。月1回で自動の rebase はしないので、マージの前に手で rebase する
+  - `package.json` に `"ryusenkei": { "dependabot": false }` を設定したリポでは、手元で `pnpm update` してまとめて更新する
 
 ## 設定と秘密値
 
