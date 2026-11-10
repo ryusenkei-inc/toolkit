@@ -78,13 +78,24 @@ function prBase(pr: string | undefined, cwd: string | undefined): string | undef
   return (r.status === 0 && r.stdout.trim()) || undefined;
 }
 
+// GitHub で無効にしたワークフローはチェックを出さない → 有効なものだけを数える
 // 読めなければ「ある」とみなす（チェックなしのマージを許可しない側に倒す）
 function hasPrWorkflow(cwd: string | undefined): boolean {
   const dir = join(repoRoot(cwd) ?? root, '.github', 'workflows');
+  let files: string[];
   try {
-    return readdirSync(dir).some((f) => /\.ya?ml$/.test(f) && /^\s*pull_request(_target)?\s*:|^on:.*\bpull_request/m.test(readFileSync(join(dir, f), 'utf8')));
+    files = readdirSync(dir).filter((f) => /\.ya?ml$/.test(f) && /^\s*pull_request(_target)?\s*:|^on:.*\bpull_request/m.test(readFileSync(join(dir, f), 'utf8')));
   } catch (e) {
     return (e as NodeJS.ErrnoException).code !== 'ENOENT';
+  }
+  if (files.length === 0) return false;
+  const r = spawnSync('gh', ['workflow', 'list', '--all', '--json', 'path,state'], { cwd: cwd ?? root, encoding: 'utf8' });
+  try {
+    const states = new Map((JSON.parse(r.stdout) as { path: string; state: string }[]).map((w) => [w.path, w.state]));
+    // GitHub にまだないファイル（未 push）は有効とみなす
+    return files.some((f) => (states.get(`.github/workflows/${f}`) ?? 'active') === 'active');
+  } catch {
+    return true;
   }
 }
 

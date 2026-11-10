@@ -55,7 +55,7 @@ The PreToolUse hook blocks the call and tells Claude why, so Claude can fix it a
 | PR title = squash commit message | Checks `gh pr create` / `gh pr edit` titles with prose-lint's commit rules |
 | No AI signature | `attribution` is empty, and the hook blocks PR bodies with an AI signature |
 | Squash merge | Blocks `gh pr merge --rebase`, and `--merge` except for a `dev/*` → `main` PR with the epic flow, which must use `--merge` |
-| Merge only after CI passes | Blocks `gh pr merge` unless every check of the PR has passed (`gh pr checks`). Pending, failed, missing, or unreadable checks are blocked, also with `--auto`. A PR may have no checks only when the repository has no workflow that runs on `pull_request` (the pre-push `pnpm check` is the gate), or with the epic flow when it targets `dev/*`. Right after a push, the checks may not be registered yet, so the hook points to `gh pr checks --watch` |
+| Merge only after CI passes | Blocks `gh pr merge` unless every check of the PR has passed (`gh pr checks`). Pending, failed, missing, or unreadable checks are blocked, also with `--auto`. A PR may have no checks only when the repository has no enabled workflow that runs on `pull_request` (workflows disabled on GitHub with `gh workflow disable` don't count; the pre-push `pnpm check` is the gate), or with the epic flow when it targets `dev/*`. Right after a push, the checks may not be registered yet, so the hook points to `gh pr checks --watch` |
 | Epic flow (opt-in) | See [Epic flow](#epic-flow) |
 | Do not edit `node_modules` | Blocks Edit and Write under `node_modules` |
 | Secrets | `permissions.deny` blocks reading `.env` and `.dev.vars` with Claude's file tools (not Bash) |
