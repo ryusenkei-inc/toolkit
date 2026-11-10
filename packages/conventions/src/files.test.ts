@@ -10,6 +10,7 @@ beforeEach(() => {
   root = mkdtempSync(join(tmpdir(), 'conventions-test-'));
   writeFileSync(join(root, 'pnpm-workspace.yaml'), 'packages:\n  - apps/*\n');
   writeFileSync(join(root, 'CLAUDE.md'), ['# CLAUDE.md', IMPORT, ...LANG_IMPORTS].join('\n'));
+  writeFileSync(join(root, 'package.json'), JSON.stringify({ scripts: { check: 'pnpm test' } }));
 });
 afterEach(() => rmSync(root, { recursive: true, force: true }));
 
@@ -71,7 +72,7 @@ describe('sync・drifts', () => {
   it('`"dependabot": false` のリポでは Dependabot の設定を配らず削除', () => {
     const dependabot = join(root, '.github/dependabot.yaml');
     sync(root);
-    writeFileSync(join(root, 'package.json'), JSON.stringify({ ryusenkei: { dependabot: false } }));
+    writeFileSync(join(root, 'package.json'), JSON.stringify({ scripts: { check: 'pnpm test' }, ryusenkei: { dependabot: false } }));
     expect(drifts(root)).toEqual([{ path: '.github/dependabot.yaml', expected: null, message: expect.stringMatching(/削除/) }]);
     expect(sync(root)).toEqual([]);
     expect(existsSync(dependabot)).toBe(false);
@@ -82,6 +83,13 @@ describe('sync・drifts', () => {
     writeFileSync(join(root, 'CLAUDE.md'), '# CLAUDE.md\n');
     writeFileSync(join(root, 'pnpm-workspace.yaml'), 'minimumReleaseAge: 60\n');
     expect(sync(root).map((d) => d.path)).toEqual(['pnpm-workspace.yaml', 'CLAUDE.md']);
+  });
+
+  it('`check` の script がないリポを検出', () => {
+    sync(root);
+    writeFileSync(join(root, 'package.json'), JSON.stringify({ scripts: { test: 'vitest run' } }));
+    expect(drifts(root)).toEqual([{ path: 'package.json', message: expect.stringMatching(/`check`/) }]);
+    expect(sync(root).map((d) => d.path)).toEqual(['package.json']);
   });
 
   it('言語・UI の規約の import は条件に合うリポだけ求める', () => {

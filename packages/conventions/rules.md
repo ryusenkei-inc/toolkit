@@ -56,7 +56,7 @@
 ## Git と PR
 
 - add は変更・追加したファイルをパスで指定する。一括の add はフックで止まる
-- push の前に `pnpm check` を通す。`check` を持つリポでは pre-push で強制される
+- push の前に `pnpm check` を通す。pre-push で強制される（`check` の script はどのリポにも置く）
 - PR の本文は背景、変更、検証の順に書く
 - 前の PR のブランチから PR を重ねた場合は、親のマージの後にスキル `stacked-pr` の手順で整理する
 - マージは squash で、CI の全チェックの成功を確かめてから行う（フックで強制）
