@@ -82,7 +82,7 @@ npx ryusenkei-repo-settings [owner/name]
 Run it once after creating a repository, since settings are not copied from a template. It sets:
 
 - Squash merge only, with the PR title as the commit title and an empty body
-- With the epic flow (`"ryusenkei": { "flow": "epic" }` in `package.json`), merge commits are also allowed for `dev/*` → `main`, with the same title and body settings
+- Merge commits and rebase merges off, also with the epic flow (`dev/*` → `main` is squashed too)
 - Delete branches after merge
 
 ## License

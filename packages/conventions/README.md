@@ -54,7 +54,7 @@ The PreToolUse hook blocks the call and tells Claude why, so Claude can fix it a
 | No force push to `main` / `master` | Blocks `git push --force` / `-f` / `--force-with-lease` and `+<refspec>` targeting `main` or `master` (also the current branch when no refspec is given) |
 | PR title = squash commit message | Checks `gh pr create` / `gh pr edit` titles with prose-lint's commit rules |
 | No AI signature | `attribution` is empty, and the hook blocks PR bodies with an AI signature |
-| Squash merge | Blocks `gh pr merge --rebase`, and `--merge` except for a `dev/*` → `main` PR with the epic flow, which must use `--merge` |
+| Squash merge | Blocks `gh pr merge --rebase` and `--merge`, also for a `dev/*` → `main` PR with the epic flow |
 | Merge only after CI passes | Blocks `gh pr merge` unless every check of the PR has passed (`gh pr checks`). Pending, failed, missing, or unreadable checks are blocked, also with `--auto`. A PR may have no checks only when the repository has no enabled workflow that runs on `pull_request` (workflows disabled on GitHub with `gh workflow disable` don't count; the pre-push `pnpm check` is the gate), or with the epic flow when it targets `dev/*`. Right after a push, the checks may not be registered yet, so the hook points to `gh pr checks --watch` |
 | Epic flow (opt-in) | See [Epic flow](#epic-flow) |
 | Do not edit `node_modules` | Blocks Edit and Write under `node_modules` |
@@ -78,7 +78,7 @@ Opt in per repository in the root `package.json`:
 - Each epic gets an integration branch `dev/<issue>-<name>` (e.g. `dev/12-search`). Sub-issue PRs target it, and only a `dev/*` branch is merged into `main` (on deploy).
 - `gh pr create` to `main` (`--base main`, or no `--base`) is blocked unless the head (`--head`, or the current branch) is `dev/*`.
 - A PR from any other branch must target a `dev/*` base. `gh pr edit` is checked only when it changes `--base`.
-- A `dev/*` → `main` PR is merged with a merge commit (`gh pr merge --merge`), not squashed. This keeps one commit per sub-issue on `main`, and keeps `dev/*` and `main` from diverging when work continues on the epic after a deploy. Turn on "Allow merge commits" in the repository settings.
+- A `dev/*` → `main` PR is squashed like any other PR, so each deploy becomes one commit on `main`. The sub-issue commits stay in the merged sub-issue PRs. If the epic continues after a deploy, recreate `dev/*` from `main` and rebase the open sub-issue PRs onto it, as described in the `stacked-pr` skill.
 - A PR into `dev/*` runs no CI; the pre-push `pnpm check` is the gate. `gh pr merge` allows such a PR with no checks, but any checks it has must still pass.
 - Without the opt-in, none of this applies and `dev/*` branch names are rejected.
 
@@ -87,7 +87,7 @@ Opt in per repository in the root `package.json`:
 `sync` writes these files and `check` compares them, ignoring line endings:
 
 - `.editorconfig`, `.gitattributes`, `.gitignore`, `.gitleaks.toml`, `mise.toml`, `.github/dependabot.yaml`, `.githooks/commit-msg`, `.githooks/pre-push`
-- Skills in `.claude/skills/`: `stacked-pr` (cleaning up a stacked PR after its parent is squash-merged). Only these names are managed; other skills in the repository are kept
+- Skills in `.claude/skills/`: `stacked-pr` (cleaning up a stacked PR after its parent is squash-merged, including sub-issue PRs after an epic's `dev/*` is squash-merged into `main`). Only these names are managed; other skills in the repository are kept
 - `.github/dependabot.yaml` updates npm and GitHub Actions. When the repository has a `go.mod` at the root, a `gomod` entry is appended (same schedule, rebase strategy and cooldown, minor and patch grouped). Without one it is left out, because Dependabot fails on a missing `go.mod`
 - When the repository has a `Cargo.toml` at the root, a `cargo` entry is appended to `.github/dependabot.yaml` after any `gomod` entry (same settings as `gomod`, covering workspace members), and `target/` is appended to `.gitignore`. `Cargo.lock` stays tracked
 - `.claude/settings.json`: only the hooks, `attribution`, `permissions.deny`, and the writing plugins are managed. Other settings, hooks, and plugins are kept
