@@ -61,8 +61,8 @@
 - epic のフロー（有効にしたリポだけ）
   - epic ごとに `dev/<issue の番号>-<内容>` を作り、sub-issue の PR は dev のブランチに向ける
   - dev のブランチへのマージに CI は使わず、pre-push の `pnpm check` を関門にする。チェックがある場合は成功が必要
-  - `main` へのマージは、デプロイのときに dev のブランチからだけ行う。方法は merge commit（`gh pr merge --merge`）で、sub-issue ごとのコミットを残し、dev と main の履歴をずらさない
-  - リポの設定で merge commit を許可する（Settings → General → Allow merge commits）
+  - `main` へのマージは、デプロイのときに dev のブランチからだけ行う。方法はほかの PR と同じ squash で、sub-issue ごとのコミットは sub-issue の PR に残る
+  - デプロイの後も epic を続ける場合は、スキル `stacked-pr` の手順で dev のブランチを `main` から作り直し、開いている sub-issue の PR を載せ直す
 
 ## CI（GitHub Actions）
 
