@@ -29,7 +29,7 @@ export type Context = {
   prHead: (pr: string | undefined, cwd: string | undefined) => string | undefined;
   /** PR の base のブランチ（`pr` の省略時は現在のブランチの PR） */
   prBase: (pr: string | undefined, cwd: string | undefined) => string | undefined;
-  /** PR で動くワークフロー（`pull_request`）がリポにあるか */
+  /** PR で動くワークフロー（`pull_request`）のうち、GitHub で有効なものがリポにあるか */
   hasPrWorkflow: (cwd: string | undefined) => boolean;
   /** PR のチェックの集計（`pr` の省略時は現在のブランチの PR） */
   prChecks: (pr: string | undefined, cwd: string | undefined) => Checks;
@@ -260,7 +260,7 @@ function mergeReasons(args: string[], st: State, ctx: Context): string[] {
   if (!devToMain && merge) return ['マージは squash（`--squash`）。merge commit は epic のフローで dev のブランチから main への PR だけ'];
   const checks = ctx.prChecks(pr, cwd);
   if (checks === 'pass') return [];
-  // PR で動くワークフローがないリポ: CI の代わりに pre-push の `pnpm check` が関門
+  // PR で動く有効なワークフローがないリポ: CI の代わりに pre-push の `pnpm check` が関門
   if (checks === 'none' && !ctx.hasPrWorkflow(cwd)) return [];
   if (checks === 'none' && epicFlow(st, ctx)) {
     const base = ctx.prBase(pr, cwd);
