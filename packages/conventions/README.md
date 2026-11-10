@@ -63,7 +63,7 @@ The PreToolUse hook blocks the call and tells Claude why, so Claude can fix it a
 
 The hook works out the target from the command itself. After `cd` or `git -C`, it checks against that repository (including its epic opt-in and `prose-lint.json`). After `git switch` or `git checkout`, it uses the new branch. Heredoc bodies are not parsed as commands.
 
-Commit messages are checked by `.githooks/commit-msg`, and edited files by prose-lint's PostToolUse hook. `.githooks/pre-push` runs `pnpm run --if-present check`, so a repository that defines a `check` script cannot push until it passes. It applies to people as well as Claude. When [Hostslot](https://github.com/ryusenkei-inc/hostslot) (`hostslot`) is on the `PATH` and the repository has a `check` script, the check runs through `hostslot run`, so pushes from parallel agents and repositories wait for free memory instead of exhausting it.
+Commit messages are checked by `.githooks/commit-msg`, and edited files by prose-lint's PostToolUse hook. `.githooks/pre-push` runs `pnpm run --if-present check` without the repository variables git passes to hooks (`GIT_DIR`, `GIT_WORK_TREE`, `GIT_INDEX_FILE`, and the rest of `git rev-parse --local-env-vars`), so git commands in tests cannot write to the pushing repository. A repository that defines a `check` script cannot push until it passes. It applies to people as well as Claude. When [Hostslot](https://github.com/ryusenkei-inc/hostslot) (`hostslot`) is on the `PATH` and the repository has a `check` script, the check runs through `hostslot run`, so pushes from parallel agents and repositories wait for free memory instead of exhausting it.
 
 ### Epic flow
 
