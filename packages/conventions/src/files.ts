@@ -2,11 +2,12 @@
 // - マスタ: パッケージの `files/`（npm は `.gitignore` を同梱しない → 先頭の `.` を除いた名前で格納）
 // - 比較は改行コードを LF に正規化（Windows の作業ツリーは CRLF になりうる）
 // - `append`: 条件のファイルがあるリポのみ、記載の順に末尾に追加（例: go.mod のないリポで gomod の更新はエラー）
-import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+// - `optOut`: `package.json` の `"ryusenkei"` のキーが `false` のリポでは配らず、残っていれば削除
+import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { hasStop, managedSettings, type Settings } from './settings.ts';
 
-const FILES: { from: string; to: string; mode?: number; append?: { from: string; if: string }[] }[] = [
+const FILES: { from: string; to: string; mode?: number; append?: { from: string; if: string }[]; optOut?: 'dependabot' }[] = [
   { from: 'editorconfig', to: '.editorconfig' },
   { from: 'gitattributes', to: '.gitattributes' },
   { from: 'gitignore', to: '.gitignore', append: [{ from: 'gitignore-cargo', if: 'Cargo.toml' }] },
@@ -19,6 +20,8 @@ const FILES: { from: string; to: string; mode?: number; append?: { from: string;
       { from: 'dependabot-gomod.yaml', if: 'go.mod' },
       { from: 'dependabot-cargo.yaml', if: 'Cargo.toml' },
     ],
+    // 非公開のリポで GitHub Actions の消費を抑える → 依存は手元でまとめて更新
+    optOut: 'dependabot',
   },
   { from: 'commit-msg', to: '.githooks/commit-msg', mode: 0o755 },
   { from: 'pre-push', to: '.githooks/pre-push', mode: 0o755 },
@@ -37,13 +40,15 @@ const LANG_RULES: { file: string; if: (root: string) => boolean }[] = [
   { file: 'rules-ui.md', if: (root) => uiOptIn(root) },
 ];
 
-function uiOptIn(root: string): boolean {
+/** ルートの `package.json` の `"ryusenkei"` の設定（読めない → 空） */
+function config(root: string): Record<string, unknown> {
   try {
-    return (JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')) as { ryusenkei?: { ui?: unknown } }).ryusenkei?.ui === true;
+    return (JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')) as { ryusenkei?: Record<string, unknown> }).ryusenkei ?? {};
   } catch {
-    return false;
+    return {};
   }
 }
+const uiOptIn = (root: string) => config(root).ui === true;
 // `.github/dependabot.yaml` の `cooldown` と同値
 const RELEASE_AGE = [
   '# 公開から2日未満のバージョンは解決しない（`.github/dependabot.yaml` の `cooldown` と同値）',
@@ -52,8 +57,8 @@ const RELEASE_AGE = [
   '  - "@ryusenkei/*"',
 ];
 
-/** 差分のあるファイル（`expected` が `undefined` = 自動で修正できない → `message` に対処） */
-export type Drift = { path: string; expected?: string; message: string };
+/** 差分のあるファイル（`expected` が `null` = 削除、`undefined` = 自動で修正できない → `message` に対処） */
+export type Drift = { path: string; expected?: string | null; message: string };
 
 const lf = (s: string) => s.replaceAll('\r\n', '\n');
 const read = (path: string) => (existsSync(path) ? lf(readFileSync(path, 'utf8')) : undefined);
@@ -62,7 +67,12 @@ const master = (name: string) => lf(readFileSync(new URL(`../files/${name}`, imp
 /** マスタとの差分 */
 export function drifts(root: string, options: { stop?: boolean } = {}): Drift[] {
   const out: Drift[] = [];
+  const settingsOf = config(root);
   for (const f of FILES) {
+    if (f.optOut && settingsOf[f.optOut] === false) {
+      if (existsSync(join(root, f.to))) out.push({ path: f.to, expected: null, message: `\`"${f.optOut}": false\` のため削除` });
+      continue;
+    }
     const appended = (f.append ?? []).filter((a) => existsSync(join(root, a.if))).map((a) => master(a.from));
     const expected = master(f.from) + appended.join('');
     if (read(join(root, f.to)) !== expected) out.push({ path: f.to, expected, message: 'マスタと不一致' });
@@ -97,6 +107,10 @@ export function sync(root: string, options: { stop?: boolean } = {}): Drift[] {
       continue;
     }
     const path = join(root, d.path);
+    if (d.expected === null) {
+      rmSync(path);
+      continue;
+    }
     mkdirSync(dirname(path), { recursive: true });
     writeFileSync(path, d.expected);
     const mode = FILES.find((f) => f.to === d.path)?.mode;
