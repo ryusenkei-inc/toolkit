@@ -69,6 +69,13 @@ describe('accessAuthenticator', () => {
     expect(await auth.authenticate(request())).toEqual({ ok: false, error: 'unauthenticated' });
   });
 
+  it('aud の配列は、トークンの aud がどれか1つに一致すれば受け付ける', async () => {
+    const auth = accessAuthenticator({ team: TEAM, aud: ['first', AUD], fetch: certs(), now: () => NOW_MS });
+    expect((await auth.authenticate(request(await sign(claims)))).ok).toBe(true);
+    expect((await auth.authenticate(request(await sign({ ...claims, aud: 'first' })))).ok).toBe(true);
+    expect(await auth.authenticate(request(await sign({ ...claims, aud: ['other'] })))).toEqual({ ok: false, error: 'unauthenticated' });
+  });
+
   it('時計のずれは60秒まで許す', async () => {
     expect((await make().authenticate(request(await sign({ ...claims, exp: NOW - 30 })))).ok).toBe(true);
   });
@@ -98,6 +105,8 @@ describe('accessAuthenticator', () => {
   it('設定の不足は ConfigError、鍵の一覧の取得・読み取りの失敗は TransientError', async () => {
     const valid = await sign(claims);
     await expect(accessAuthenticator({ team: undefined, aud: AUD }).authenticate(request(valid))).rejects.toBeInstanceOf(ConfigError);
+    await expect(accessAuthenticator({ team: TEAM, aud: [] }).authenticate(request(valid))).rejects.toBeInstanceOf(ConfigError);
+    await expect(accessAuthenticator({ team: TEAM, aud: [''] }).authenticate(request(valid))).rejects.toBeInstanceOf(ConfigError);
     await expect(make((async () => new Response(null, { status: 503 })) as unknown as typeof fetch).authenticate(request(valid))).rejects.toBeInstanceOf(TransientError);
     await expect(make((async () => new Response('<html>')) as unknown as typeof fetch).authenticate(request(valid))).rejects.toBeInstanceOf(TransientError);
     await expect(make((async () => Promise.reject(new DOMException('t', 'TimeoutError'))) as unknown as typeof fetch).authenticate(request(valid))).rejects.toBeInstanceOf(TransientError);
