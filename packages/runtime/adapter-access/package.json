@@ -1,6 +1,6 @@
 {
   "name": "@ryusenkei/adapter-access",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "認証の Cloudflare Access による実装（JWT の署名・aud・iss・期限の検証、サービストークン）",
   "license": "MIT",
   "author": "RYUSENKEI",

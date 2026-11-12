@@ -1,6 +1,6 @@
 {
   "name": "@ryusenkei/mail",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "メール送信の型と、宛先・ヘッダーの検査（メモリの実装付き）",
   "license": "MIT",
   "author": "RYUSENKEI",
