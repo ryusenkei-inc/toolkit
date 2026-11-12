@@ -3,8 +3,13 @@
 import { LegalDeclarationError, type Article, type LegalDocument, type Paragraph, type Revision } from './document.ts';
 import { operatorRows, type Operator } from './operator.ts';
 
-/** 保管期間。日数は削除の処理からも `retentionDaysOf` で参照する */
-export type Retention = Readonly<{ days: number }> | Readonly<{ until: 'request' }>;
+/**
+ * 保管期間。日数は削除の処理からも `retentionDaysOf` で参照する
+ * - `months`: 外部のサービスの保存の期間が月で決まっているとき（例: 3か月で消えるログ）
+ * - `until: 'request'`: 利用者からの削除のお申し出まで
+ * - `until: 'purpose'`: 利用目的の達成に必要な期間（期限を決めずに、目的を終えたら消す情報）
+ */
+export type Retention = Readonly<{ days: number }> | Readonly<{ months: number }> | Readonly<{ until: 'request' | 'purpose' }>;
 
 /** 集める情報 */
 export type CollectedItem = Readonly<{
@@ -51,9 +56,10 @@ export type PrivacyDeclaration = Readonly<{
 
 const JAPAN = '日本';
 
-/** 保管期間の表示（365日の倍数は年、それ以外は日） */
+/** 保管期間の表示（365日の倍数は年、それ以外は日、月は月） */
 export function retentionText(retention: Retention): string {
-  if ('until' in retention) return '利用者からの削除のお申し出まで';
+  if ('until' in retention) return retention.until === 'request' ? '利用者からの削除のお申し出まで' : '利用目的の達成に必要な期間';
+  if ('months' in retention) return `${retention.months}か月間`;
   const { days } = retention;
   return days % 365 === 0 ? `${days / 365}年間` : `${days}日間`;
 }

@@ -58,6 +58,8 @@ describe('privacyPolicy', () => {
     expect(retentionDaysOf(declaration, 'お問い合わせの内容')).toBe(365);
     expect(retentionDaysOf(declaration, 'メールアドレス')).toBeUndefined();
     expect(retentionText({ days: 90 })).toBe('90日間');
+    expect(retentionText({ months: 3 })).toBe('3か月間');
+    expect(retentionText({ until: 'purpose' })).toBe('利用目的の達成に必要な期間');
   });
 
   it('外部への送信を、送信先と情報と目的で示す', () => {
