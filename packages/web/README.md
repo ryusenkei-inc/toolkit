@@ -253,7 +253,7 @@ What the declaration drives:
 
 | Declared | Generated |
 | --- | --- |
-| `collected` | The items with their method and purposes, and a retention article (`{ days }`, or `{ until: 'request' }`). Multiples of 365 days are written in years |
+| `collected` | The items with their method and purposes, and a retention article (`{ days }`, `{ months }`, `{ until: 'request' }` until the user asks for deletion, or `{ until: 'purpose' }` for as long as the purposes need). Multiples of 365 days are written in years |
 | `services` with `role: 'processor'` | An outsourcing (`委託`) article |
 | `services` with `role: 'transmission'` | What is sent, to whom, and why (external transmission from the user's device) |
 | any service outside 日本 | An article on provision to third parties in foreign countries, and a security-measure line about understanding those countries' rules |
