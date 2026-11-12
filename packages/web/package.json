@@ -1,6 +1,6 @@
 {
   "name": "@ryusenkei/web",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "小さなプロダクトの実行時のライブラリ（エラーと応答、フォーム、法務の本文、メール、Cloudflare・Turnstile・Access の実装）",
   "license": "MIT",
   "author": "RYUSENKEI",
