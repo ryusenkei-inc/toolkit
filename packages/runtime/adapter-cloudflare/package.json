@@ -1,6 +1,6 @@
 {
   "name": "@ryusenkei/adapter-cloudflare",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "Cloudflare Workers の binding による実装（回数の制限、メール送信）",
   "license": "MIT",
   "author": "RYUSENKEI",
