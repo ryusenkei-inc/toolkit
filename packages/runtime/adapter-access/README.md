@@ -19,7 +19,11 @@ if (!user.ok) return new Response(null, { status: 401 });
 ```
 
 - `team`: the Cloudflare One team name (`<team>.cloudflareaccess.com`)
-- `aud`: the Application Audience (AUD) tag of the Access application
+- `aud`: the Application Audience (AUD) tag of the Access application. When the app sits behind several Access applications, pass an array of tags; a token is accepted when its `aud` matches any of them:
+
+  ```ts
+  accessAuthenticator({ team: env.ACCESS_TEAM, aud: env.ACCESS_AUD?.split(',') });
+  ```
 
 The result is an `Identity`:
 
@@ -35,7 +39,7 @@ The result is an `Identity`:
 The token comes from the `Cf-Access-Jwt-Assertion` header. Anything else gives `unauthenticated`:
 
 - The signature is RS256 and matches a key from `https://<team>.cloudflareaccess.com/cdn-cgi/access/certs` with the same `kid`
-- `aud` contains the configured AUD tag, and `iss` is `https://<team>.cloudflareaccess.com`
+- `aud` contains one of the configured AUD tags, and `iss` is `https://<team>.cloudflareaccess.com`
 - `exp` has not passed and `nbf` has (60 seconds of clock skew allowed)
 - A user token has `sub` and an email, and `email_verified` is not `false`
 
@@ -43,7 +47,7 @@ The token comes from the `Cf-Access-Jwt-Assertion` header. Anything else gives `
 
 - The key list is cached for an hour. A token with an unknown `kid` refetches it, at most once every 30 seconds, since Access rotates keys every six weeks and junk tokens must not trigger a fetch each time.
 - Imported keys are cached per `kid`.
-- A missing `team` or `aud` throws `ConfigError`.
+- A missing `team` or `aud` (including an empty array) throws `ConfigError`.
 - A key-list fetch that fails, times out (5 seconds by default, `timeoutMs`), or can't be read throws `TransientError`.
 
 ## License

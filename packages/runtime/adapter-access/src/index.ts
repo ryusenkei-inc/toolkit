@@ -10,8 +10,8 @@ export type Identity = Readonly<{ kind: 'user' | 'service'; subject: string; ema
 export type AccessOptions = {
   /** Cloudflare One のチーム名（`<team>.cloudflareaccess.com` の `<team>`） */
   team: string | undefined;
-  /** Access のアプリの Application Audience（AUD）タグ */
-  aud: string | undefined;
+  /** Access のアプリの Application Audience（AUD）タグ。複数のアプリの後ろにいるときは配列で渡し、どれか1つに一致すれば受け付ける */
+  aud: string | readonly string[] | undefined;
   /** 鍵の一覧の取得の時間切れ（ミリ秒、既定は5秒） */
   timeoutMs?: number;
   /** テストで差し替える `fetch` と現在時刻（ミリ秒） */
@@ -45,7 +45,7 @@ export type Authenticator = Readonly<{ authenticate(request: Request): Promise<R
 
 /**
  * Cloudflare Access の JWT（`Cf-Access-Jwt-Assertion` のヘッダー）による認証
- * - 署名（RS256、チームの鍵の一覧）、`aud`、`iss`、`exp`・`nbf` を検証
+ * - 署名（RS256、チームの鍵の一覧）、`aud`（設定したタグのどれか）、`iss`、`exp`・`nbf` を検証
  * - `email_verified` が `false` のログインは拒否する
  * - `groups` は JWT に含まれる場合だけ返す（含めるには Access の設定が要る）
  */
@@ -54,6 +54,7 @@ export function accessAuthenticator(options: AccessOptions): Authenticator {
   const now = options.now ?? Date.now;
   let cache: { at: number; keys: Jwk[] } | undefined;
   const imported = new Map<string, Promise<CryptoKey>>();
+  const allowed = (typeof options.aud === 'string' ? [options.aud] : (options.aud ?? [])).filter((a) => a);
 
   const keys = async (refresh: boolean): Promise<Jwk[]> => {
     const age = cache ? now() - cache.at : Number.POSITIVE_INFINITY;
@@ -86,7 +87,7 @@ export function accessAuthenticator(options: AccessOptions): Authenticator {
 
   return {
     async authenticate(request) {
-      if (!options.team || !options.aud) throw new ConfigError('Access のチーム名・AUD タグが未設定', { key: !options.team ? 'team' : 'aud' });
+      if (!options.team || allowed.length === 0) throw new ConfigError('Access のチーム名・AUD タグが未設定', { key: !options.team ? 'team' : 'aud' });
       const parts = request.headers.get('cf-access-jwt-assertion')?.split('.');
       if (!parts || parts.length !== 3) return err('unauthenticated');
       const [h, p, s] = parts as [string, string, string];
@@ -106,7 +107,7 @@ export function accessAuthenticator(options: AccessOptions): Authenticator {
 
       const t = now() / 1000;
       const auds = Array.isArray(claims.aud) ? claims.aud : [claims.aud];
-      if (!auds.includes(options.aud)) return err('unauthenticated');
+      if (!auds.some((a) => typeof a === 'string' && allowed.includes(a))) return err('unauthenticated');
       if (claims.iss !== `https://${options.team}.cloudflareaccess.com`) return err('unauthenticated');
       if (typeof claims.exp !== 'number' || claims.exp + LEEWAY_SEC < t) return err('unauthenticated');
       if (typeof claims.nbf === 'number' && claims.nbf - LEEWAY_SEC > t) return err('unauthenticated');
