@@ -1,0 +1,40 @@
+{
+  "name": "@ryusenkei/company",
+  "version": "0.1.0",
+  "description": "RYUSENKEI の会社の値（運営者、法務の既定値、窓口の既定値）。@ryusenkei/web に渡す",
+  "license": "MIT",
+  "author": "RYUSENKEI",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ryusenkei-inc/toolkit.git",
+    "directory": "packages/company"
+  },
+  "homepage": "https://github.com/ryusenkei-inc/toolkit/tree/main/packages/company",
+  "type": "module",
+  "sideEffects": false,
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./company.json": "./dist/company.json"
+  },
+  "files": [
+    "dist"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json && node scripts/json.ts",
+    "prepublishOnly": "pnpm run build",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@ryusenkei/web": "workspace:^0.3.0",
+    "@types/node": "^26.6.1",
+    "typescript": "^5.9.3"
+  }
+}
