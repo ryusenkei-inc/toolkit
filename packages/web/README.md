@@ -1,6 +1,6 @@
 # @ryusenkei/web
 
-Runtime libraries for launching small web products on Cloudflare Workers or Vercel: typed errors and failure responses, contact and feedback forms with delivery by email or webhook, a privacy policy and a 特定商取引法 notice built from a declaration, and the Cloudflare, Turnstile, and Access integrations they need. Each area is a subpath export. There are no runtime dependencies, the server side is a standard `(Request) => Response`, and nothing renders UI.
+Runtime libraries for launching small web products on Cloudflare Workers or Vercel: typed errors and failure responses, contact and feedback forms with delivery by email or webhook, a privacy policy, a 特定商取引法 notice, and an advertising disclosure built from a declaration, and the Cloudflare, Turnstile, and Access integrations they need. Each area is a subpath export. There are no runtime dependencies, the server side is a standard `(Request) => Response`, and nothing renders UI.
 
 ## Install
 
@@ -15,7 +15,7 @@ pnpm add @ryusenkei/web
 | `@ryusenkei/web/form/server` | The submission handler and its destinations (email, webhook) |
 | `@ryusenkei/web/form/client` | Submitting from the page |
 | `@ryusenkei/web/form/testing` | Fakes for the bot check, rate limiter, and destinations |
-| `@ryusenkei/web/legal` | Privacy policy, 特定商取引法 notice, operator details |
+| `@ryusenkei/web/legal` | Privacy policy, 特定商取引法 notice, advertising disclosure, operator details |
 | `@ryusenkei/web/mail` | The `Mail` shape, the `Mailer` interface, and the checks before sending |
 | `@ryusenkei/web/mail/testing` | An in-memory `Mailer` |
 | `@ryusenkei/web/cloudflare` | Workers bindings: Rate Limiting and Email Service |
@@ -205,7 +205,7 @@ if (!result.ok) showErrors(result.error, result.problems); // codes only; 'netwo
 
 ## Legal documents (`@ryusenkei/web/legal`)
 
-Builds a privacy policy, a notice under Japan's Act on Specified Commercial Transactions (`特定商取引法に基づく表記`), and the operator details for a footer from a short declaration. The output is structured data (articles, paragraphs, lists, tables) in Japanese; rendering is yours.
+Builds a privacy policy, a notice under Japan's Act on Specified Commercial Transactions (`特定商取引法に基づく表記`), an advertising disclosure page, and the operator details for a footer from a short declaration. The output is structured data (articles, paragraphs, lists, tables) in Japanese; rendering is yours.
 
 > The standard wording is a starting point, not legal advice. Have it reviewed before you publish.
 
@@ -286,6 +286,31 @@ const notice = tokushoNotice({
 - When any detail is `on_request`, the notice ends with a `表示の省略について` (omitted items) row saying that those details are sent by email, without delay, on a request to the operator's email address. Omission relies on the proviso of Article 11.
 - With `finalConfirmationScreen: true`, the site has a final order-confirmation screen (Article 12-6), so `price` must be `public` (enforced by the type). The seller's name, address, and phone can still be `on_request`; Article 12-6 covers quantity, price, payment, delivery, the order period, and cancellation, not the seller's details.
 - A missing seller name, address, phone, or price also throws.
+
+### Advertising disclosure
+
+A `広告の掲載について` page: the ad programs the site takes part in, how ads are labeled in articles, and the statements a program's terms require. It follows the Consumer Affairs Agency's guidelines on stealth marketing (`ステルスマーケティング`) under the Act against Unjustifiable Premiums and Misleading Representations, and the labeling customs of affiliate networks.
+
+```ts
+import { adDisclosure, adStatements, amazonAssociates } from '@ryusenkei/web/legal';
+
+const declaration = {
+  subject: 'Example のウェブサイト',
+  operator,
+  programs: [amazonAssociates('Example'), { name: 'A8.net', provider: '株式会社ファンコミュニケーションズ', kind: 'affiliate' }],
+  labeling: { label: 'PR', position: 'top' }, // or 'near_link', 'both'
+  privacyPolicyUrl: 'https://www.example.com/privacy',
+  enactedOn: '2026-11-13', // null while drafting
+} satisfies AdDisclosureDeclaration;
+
+const doc = adDisclosure(declaration);
+const footer = adStatements(declaration); // statements required by program terms, for a footer
+```
+
+- `kind` is `affiliate`, `advertising` (ad slots filled by a network), or `sponsored` (articles or links requested by an advertiser). It decides which paragraphs appear: the reward and link-destination notes for affiliates, the cookie paragraph for affiliates and ad networks.
+- `statement` is printed as is. `amazonAssociates(who)` fills in the wording the Amazon Associates terms require (`Amazonのアソシエイトとして、<who>は適格販売により収入を得ています。`).
+- With no programs, the page says the site carries no ads and lists only the contact.
+- With `enactedOn: null`, a missing `labeling` is listed in `doc.missing`; setting `enactedOn` with programs but no `labeling` throws `LegalDeclarationError`.
 
 Terms of use are not generated; they differ too much between products.
 

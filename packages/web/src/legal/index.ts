@@ -1,3 +1,4 @@
+export { adDisclosure, adStatements, amazonAssociates, type AdDisclosureDeclaration, type AdLabeling, type AdProgram } from './ads.ts';
 export { LegalDeclarationError, type Article, type Inline, type LegalDocument, type Paragraph, type Revision, type Row } from './document.ts';
 export { copyrightLine, ON_REQUEST_TEXT, operatorRows, type Disclosure, type Operator } from './operator.ts';
 export { privacyPolicy, retentionDaysOf, retentionText, type CollectedItem, type ExternalService, type PrivacyDeclaration, type Retention } from './privacy.ts';
