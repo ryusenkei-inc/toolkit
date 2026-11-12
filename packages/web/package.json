@@ -1,0 +1,77 @@
+{
+  "name": "@ryusenkei/web",
+  "version": "0.3.0",
+  "description": "小さなプロダクトの実行時のライブラリ（エラーと応答、フォーム、法務の本文、メール、Cloudflare・Turnstile・Access の実装）",
+  "license": "MIT",
+  "author": "RYUSENKEI",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ryusenkei-inc/toolkit.git",
+    "directory": "packages/web"
+  },
+  "homepage": "https://github.com/ryusenkei-inc/toolkit/tree/main/packages/web",
+  "type": "module",
+  "sideEffects": false,
+  "types": "./dist/core/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/core/index.d.ts",
+      "default": "./dist/core/index.js"
+    },
+    "./form": {
+      "types": "./dist/form/index.d.ts",
+      "default": "./dist/form/index.js"
+    },
+    "./form/server": {
+      "types": "./dist/form/server.d.ts",
+      "default": "./dist/form/server.js"
+    },
+    "./form/client": {
+      "types": "./dist/form/client.d.ts",
+      "default": "./dist/form/client.js"
+    },
+    "./form/testing": {
+      "types": "./dist/form/testing.d.ts",
+      "default": "./dist/form/testing.js"
+    },
+    "./legal": {
+      "types": "./dist/legal/index.d.ts",
+      "default": "./dist/legal/index.js"
+    },
+    "./mail": {
+      "types": "./dist/mail/index.d.ts",
+      "default": "./dist/mail/index.js"
+    },
+    "./mail/testing": {
+      "types": "./dist/mail/testing.d.ts",
+      "default": "./dist/mail/testing.js"
+    },
+    "./cloudflare": {
+      "types": "./dist/cloudflare/index.d.ts",
+      "default": "./dist/cloudflare/index.js"
+    },
+    "./turnstile": {
+      "types": "./dist/turnstile/index.d.ts",
+      "default": "./dist/turnstile/index.js"
+    },
+    "./access": {
+      "types": "./dist/access/index.d.ts",
+      "default": "./dist/access/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "prepublishOnly": "pnpm run build",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3"
+  }
+}

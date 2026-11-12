@@ -23,19 +23,13 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm lint
       - run: pnpm test
-      # `runtime@<version>` は実行時のライブラリ（packages/runtime/*）を同じバージョンでまとめて公開
       - name: タグとパッケージのバージョンの一致
         run: |
           name="${GITHUB_REF_NAME%@*}"; version="${GITHUB_REF_NAME#*@}"
           echo "$name" | grep -Eq '^[a-z0-9-]+$' || { echo "パッケージ名が不正: $name"; exit 1; }
-          if [ "$name" = runtime ]; then dirs=$(ls -d packages/runtime/*/); filter='./packages/runtime/*'; else dirs="packages/$name/"; filter="./packages/$name"; fi
-          for dir in $dirs; do
-            actual=$(DIR="$dir" node -p "require('./' + process.env.DIR + 'package.json').version")
-            test "$version" = "$actual" || { echo "タグ $version と ${dir}package.json $actual が不一致"; exit 1; }
-          done
-          echo "FILTER=$filter" >> "$GITHUB_ENV"
-      # 公開の前にまとめてビルドする。publish は公開済みのパッケージを飛ばし、その prepublishOnly（ビルド）も走らないので、
-      # 依存先が公開済みだと依存元のビルドが型を見つけられない
+          actual=$(NAME="$name" node -p "require('./packages/' + process.env.NAME + '/package.json').version")
+          test "$version" = "$actual" || { echo "タグ $version と packages/$name/package.json $actual が不一致"; exit 1; }
+          echo "FILTER=./packages/$name" >> "$GITHUB_ENV"
+      # 依存先（company の型が参照する web など）も先にビルドする
       - run: pnpm -r --filter "$FILTER..." build
-      # 公開済みのバージョンは飛ばす（まとめての公開の途中で失敗したときの再実行）
       - run: pnpm -r --filter "$FILTER" publish --no-git-checks

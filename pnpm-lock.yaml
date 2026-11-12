@@ -18,6 +18,18 @@ importers:
         specifier: ^5.0.1
         version: 5.0.3(@types/node@26.6.4)(vite@8.3.2(@types/node@26.6.4))
 
+  packages/company:
+    devDependencies:
+      '@ryusenkei/web':
+        specifier: workspace:^0.3.0
+        version: link:../web
+      '@types/node':
+        specifier: ^26.6.1
+        version: 26.6.4
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+
   packages/conventions:
     dependencies:
       '@ryusenkei/prose-lint':
@@ -40,74 +52,6 @@ importers:
         specifier: ^5.9.3
         version: 5.9.3
 
-  packages/runtime/adapter-access:
-    dependencies:
-      '@ryusenkei/core':
-        specifier: workspace:^0.2.0
-        version: link:../core
-    devDependencies:
-      typescript:
-        specifier: ^5.9.3
-        version: 5.9.3
-
-  packages/runtime/adapter-cloudflare:
-    dependencies:
-      '@ryusenkei/core':
-        specifier: workspace:^0.2.0
-        version: link:../core
-      '@ryusenkei/mail':
-        specifier: workspace:^0.2.0
-        version: link:../mail
-    devDependencies:
-      typescript:
-        specifier: ^5.9.3
-        version: 5.9.3
-
-  packages/runtime/adapter-turnstile:
-    dependencies:
-      '@ryusenkei/core':
-        specifier: workspace:^0.2.0
-        version: link:../core
-    devDependencies:
-      typescript:
-        specifier: ^5.9.3
-        version: 5.9.3
-
-  packages/runtime/core:
-    devDependencies:
-      typescript:
-        specifier: ^5.9.3
-        version: 5.9.3
-
-  packages/runtime/form:
-    dependencies:
-      '@ryusenkei/core':
-        specifier: workspace:^0.2.0
-        version: link:../core
-      '@ryusenkei/mail':
-        specifier: workspace:^0.2.0
-        version: link:../mail
-    devDependencies:
-      typescript:
-        specifier: ^5.9.3
-        version: 5.9.3
-
-  packages/runtime/legal:
-    devDependencies:
-      typescript:
-        specifier: ^5.9.3
-        version: 5.9.3
-
-  packages/runtime/mail:
-    dependencies:
-      '@ryusenkei/core':
-        specifier: workspace:^0.2.0
-        version: link:../core
-    devDependencies:
-      typescript:
-        specifier: ^5.9.3
-        version: 5.9.3
-
   packages/scripts:
     dependencies:
       cross-spawn:
@@ -120,6 +64,12 @@ importers:
       '@types/node':
         specifier: ^26.6.1
         version: 26.6.4
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+
+  packages/web:
+    devDependencies:
       typescript:
         specifier: ^5.9.3
         version: 5.9.3

@@ -37,8 +37,8 @@ jobs:
         run: pnpm test
       - name: Prose lint
         run: pnpm lint:prose
-      - name: Runtime packages
-        run: node scripts/check-runtime.ts
+      - name: Company-specific values in web
+        run: node scripts/check-web.ts
       - uses: hashicorp/setup-terraform@v4
         with:
           terraform_wrapper: false
