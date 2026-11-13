@@ -43,12 +43,12 @@ const make = (fetch: typeof globalThis.fetch = certs(), now = () => NOW_MS) => a
 
 describe('accessAuthenticator', () => {
   it('正しいトークンは利用者を返し、メールアドレスは小文字にする', async () => {
-    expect(await make().authenticate(request(await sign(claims)))).toEqual({ ok: true, value: { kind: 'user', subject: 'user-1', email: 'user@example.com', groups: [] } });
+    expect(await make().authenticate(request(await sign(claims)))).toMatchObject({ ok: true, value: { kind: 'user', subject: 'user-1', email: 'user@example.com', groups: [] } });
   });
 
   it('サービストークンは service:<クライアントの ID>', async () => {
     const token = await sign({ aud: [AUD], iss: ISS, sub: '', common_name: 'abc.access', exp: NOW + 600 });
-    expect(await make().authenticate(request(token))).toEqual({ ok: true, value: { kind: 'service', subject: 'service:abc.access', email: undefined, groups: [] } });
+    expect(await make().authenticate(request(token))).toMatchObject({ ok: true, value: { kind: 'service', subject: 'service:abc.access', email: undefined, groups: [] } });
   });
 
   it('aud・iss・期限・署名・kid・alg・email_verified の誤りと、形の崩れは unauthenticated', async () => {

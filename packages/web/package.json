@@ -18,6 +18,10 @@
       "types": "./dist/core/index.d.ts",
       "default": "./dist/core/index.js"
     },
+    "./log-context": {
+      "types": "./dist/log-context/index.d.ts",
+      "default": "./dist/log-context/index.js"
+    },
     "./form": {
       "types": "./dist/form/index.d.ts",
       "default": "./dist/form/index.js"
