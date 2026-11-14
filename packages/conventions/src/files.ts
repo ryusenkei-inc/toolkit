@@ -6,6 +6,7 @@
 import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { hasStop, managedSettings, type Settings } from './settings.ts';
+import { testExcludeProblem } from './test-exclude.ts';
 
 const FILES: { from: string; to: string; mode?: number; append?: { from: string; if: string }[]; optOut?: 'dependabot' }[] = [
   { from: 'editorconfig', to: '.editorconfig' },
@@ -90,11 +91,15 @@ export function drifts(root: string, options: { stop?: boolean } = {}): Drift[] 
   }
 
   // pre-push の関門は `pnpm check`（`check` がないと何も検査されずに push される）
-  let scripts: Record<string, unknown> = {};
+  let manifest: { scripts?: Record<string, unknown>; dependencies?: Record<string, unknown>; devDependencies?: Record<string, unknown> } = {};
   try {
-    scripts = (JSON.parse(read(join(root, 'package.json')) ?? '{}') as { scripts?: Record<string, unknown> }).scripts ?? {};
+    manifest = JSON.parse(read(join(root, 'package.json')) ?? '{}') as typeof manifest;
   } catch {}
-  if (typeof scripts.check !== 'string') out.push({ path: 'package.json', message: '`check` の script を追加（pre-push で動かす検査。型検査、テスト、lint など）' });
+  if (typeof manifest.scripts?.check !== 'string') out.push({ path: 'package.json', message: '`check` の script を追加（pre-push で動かす検査。型検査、テスト、lint など）' });
+
+  // Vitest の除外（作業用の worktree と、Terraform が取得したモジュールのテストを集めない）
+  const excludeProblem = testExcludeProblem(Object.keys({ ...manifest.dependencies, ...manifest.devDependencies }), (file) => read(join(root, file)));
+  if (excludeProblem) out.push(excludeProblem);
 
   const claude = read(join(root, 'CLAUDE.md')) ?? '';
   const lines = claude.split('\n');

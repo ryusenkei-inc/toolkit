@@ -108,3 +108,26 @@ describe('sync・drifts', () => {
     expect(readFileSync(join(root, 'CLAUDE.md'), 'utf8')).toBe(['# CLAUDE.md', '', IMPORT, ...LANG_IMPORTS, ''].join('\n'));
   });
 });
+
+describe('Vitest の除外', () => {
+  const withVitest = () => writeFileSync(join(root, 'package.json'), JSON.stringify({ scripts: { check: 'pnpm test' }, devDependencies: { vitest: '^5.0.0' } }));
+  const problem = () => drifts(root).filter((d) => d.path.startsWith('vitest.config'));
+
+  it('vitest に依存しないリポは対象の外', () => {
+    sync(root);
+    expect(problem()).toEqual([]);
+  });
+
+  it('設定がないか、除外がなければ報告し、TEST_EXCLUDE か全パターンを書けば通す', () => {
+    withVitest();
+    sync(root);
+    expect(problem()).toEqual([{ path: 'vitest.config.ts', message: expect.stringContaining('Vitest の設定がない') }]);
+    writeFileSync(join(root, 'vitest.config.ts'), "export default defineConfig({ test: { exclude: [...configDefaults.exclude, '.claude/**'] } });\n");
+    expect(problem()).toEqual([{ path: 'vitest.config.ts', message: expect.stringContaining('**/.terraform/**') }]);
+    writeFileSync(join(root, 'vitest.config.ts'), "import { TEST_EXCLUDE } from '@ryusenkei/conventions';\nexport default defineConfig({ test: { exclude: [...configDefaults.exclude, ...TEST_EXCLUDE] } });\n");
+    expect(problem()).toEqual([]);
+    writeFileSync(join(root, 'vitest.config.ts'), "export default { test: { exclude: ['.claude/**', '**/.terraform/**'] } };\n");
+    expect(problem()).toEqual([]);
+    expect(sync(root).map((d) => d.path)).not.toContain('vitest.config.ts');
+  });
+});

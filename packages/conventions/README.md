@@ -9,6 +9,7 @@ Shared conventions for RYUSENKEI monorepos created from monorepo-template. Rules
 | `dist/hook.js` | Claude Code hook: blocks tool calls that break the rules, and optionally runs lint and tests before Claude finishes |
 | `files/` | Master copies of the shared files, synced into each repository |
 | `ryusenkei-conventions` | CLI: `sync` writes the shared files, `check` reports drift |
+| `TEST_EXCLUDE` | Patterns to add to Vitest's default `exclude` |
 
 ## Install
 
@@ -37,6 +38,7 @@ Requires Node.js 24 or later.
 
 2. Write the shared files: `npx ryusenkei-conventions sync` (add `--stop` to run lint and tests before Claude finishes).
 3. Add `ryusenkei-conventions check` to the `lint` script.
+4. With Vitest, exclude `TEST_EXCLUDE` in the root `vitest.config.ts` (see [Vitest](#vitest)).
 
 - Claude Code expands the import when a session starts. Run `pnpm install` first, or the rules are not loaded.
 - The import resolves inside the working directory, so Claude Code does not ask for approval of external imports.
@@ -106,9 +108,34 @@ Opt in per repository in the root `package.json`:
 
 When the `rules.md` import is present, `sync` adds the missing ones right after it.
 
-`check` also reports a root `package.json` without a `check` script, since the pre-push hook runs `pnpm check` and pushes unchecked without one. Add it by hand (for example `pnpm typecheck && pnpm test && pnpm lint:prose && ryusenkei-conventions check`).
+`check` also reports a missing or incomplete root Vitest config when the root `package.json` depends on `vitest` (see [Vitest](#vitest)), and a root `package.json` without a `check` script, since the pre-push hook runs `pnpm check` and pushes unchecked without one. Add it by hand (for example `pnpm typecheck && pnpm test && pnpm lint:prose && ryusenkei-conventions check`).
 
 Dependabot runs monthly with `rebase-strategy: disabled` to save GitHub Actions minutes, so rebase a Dependabot PR (`@dependabot rebase`) before merging it. The `cooldown` excludes `@ryusenkei/*`. To pick up a new version sooner, run `pnpm update "@ryusenkei/*"`. After an update, `check` fails until `sync` is run.
+
+## Vitest
+
+`TEST_EXCLUDE` is what every repository adds to Vitest's default `exclude`:
+
+```ts
+// vitest.config.ts
+import { TEST_EXCLUDE } from '@ryusenkei/conventions';
+import { configDefaults, defineConfig } from 'vitest/config';
+
+export default defineConfig({
+  test: {
+    exclude: [...configDefaults.exclude, ...TEST_EXCLUDE],
+  },
+});
+```
+
+| Pattern | Why |
+| --- | --- |
+| `.claude/**` | Agents' worktrees inside the repository would run the same tests twice |
+| `**/.terraform/**` | `terraform init` downloads a Git module source as the whole repository (toolkit's tests included) into `.terraform/modules/` |
+
+`check` reports a root `vitest.config.*` that neither uses `TEST_EXCLUDE` nor lists every pattern, and a repository that depends on `vitest` without one. It can't fix this by itself, since each repository's config differs. The shared `.gitignore` ignores `.terraform/` as well (`.terraform.lock.hcl` stays tracked).
+
+`ryusenkei-conventions` exits with 0 when nothing drifts, 1 when something does, and 2 for a usage error; `--help` exits with 0.
 
 ## Dependency direction
 
@@ -225,3 +252,5 @@ jobs:
 - major: a rule is removed or reversed, or a synced file changes incompatibly
 - minor: a rule, a hook check, or a synced file is added
 - patch: fixes and wording
+
+See the [CHANGELOG](CHANGELOG.md) for what each version changed.
