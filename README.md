@@ -26,7 +26,7 @@ pnpm build     # build dist/ for each package
 
 ## Terraform modules
 
-`terraform/modules/` has small modules for DNS records, Turnstile widgets, Access applications, www and trailing-slash redirects, and Search Console verification. They are referenced by Git with `terraform-v<version>` tags; see the [Terraform README](terraform/README.md).
+`terraform/modules/` has small modules for DNS records, Turnstile widgets, Access applications, www and trailing-slash redirects, and Search Console verification. They are referenced by Git with `terraform-v<version>` tags; see the [Terraform README](terraform/README.md) and its [CHANGELOG](terraform/CHANGELOG.md).
 
 ## Reusable workflows
 
@@ -36,7 +36,7 @@ pnpm build     # build dist/ for each package
 
 Publishing runs on GitHub Actions when a tag `<package>@<version>` is pushed. It uses npm trusted publishing with provenance, so no npm token is stored.
 
-1. Bump `version` in `packages/<package>/package.json` and commit it as `chore(release): <package>@<version>`.
+1. Write the version's changes in `packages/<package>/CHANGELOG.md` with the feature PR (for a breaking change, a before → after table that the other repositories migrate with). Then bump `version` in `packages/<package>/package.json` and commit it as `chore(release): <package>@<version>`.
 2. Tag and push:
 
    ```sh
