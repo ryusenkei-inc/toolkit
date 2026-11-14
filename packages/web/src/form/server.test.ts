@@ -3,7 +3,7 @@ import { memoryMailer } from '../mail/testing.ts';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { submitForm } from './client.ts';
 import { defineForm } from './index.ts';
-import { mailDestination, notificationText, signWebhook, submissionHandler, webhookDestination, type Submission } from './server.ts';
+import { httpDestination, mailDestination, notificationText, signWebhook, submissionHandler, webhookDestination, type Destination, type Submission } from './server.ts';
 import { fakeBotCheck, fakeRateLimiter, memoryDestination } from './testing.ts';
 
 afterEach(() => vi.restoreAllMocks());
@@ -107,11 +107,30 @@ describe('submissionHandler', () => {
   });
 
   it('POST 以外は 405、大きすぎる本文は 413、読めない本文は 400', async () => {
-    const handle = submissionHandler({ forms: { feedback }, destinations: [], maxBodyBytes: 10 });
+    const handle = submissionHandler({ forms: { feedback }, destinations: [memoryDestination('a')], maxBodyBytes: 10 });
     expect((await handle(new Request('https://app.example.com/'))).status).toBe(405);
     expect((await handle(new Request('https://app.example.com/', { method: 'POST', body: 'x'.repeat(11) }))).status).toBe(413);
-    const json = submissionHandler({ forms: { feedback }, destinations: [] });
+    const json = submissionHandler({ forms: { feedback }, destinations: [memoryDestination('a')] });
     expect((await json(new Request('https://app.example.com/', { method: 'POST', headers: { 'content-type': 'application/json' }, body: '[1]' }))).status).toBe(400);
+  });
+
+  it('届け先が0件なら 503 not_configured', async () => {
+    quiet();
+    const res = await submissionHandler({ forms: { feedback }, destinations: [] })(post({ message: '本文' }));
+    expect(res.status).toBe(503);
+    expect(await res.json()).toMatchObject({ error: 'not_configured' });
+  });
+
+  it('acceptedId で届け先の値から受付の番号を応答に入れ、submitForm が返す', async () => {
+    quiet();
+    const store: Destination = { name: 'store', deliver: async () => ({ ok: true, value: { id: '42' } }) };
+    const handle = submissionHandler({ forms: { feedback }, destinations: [store, memoryDestination('log')], acceptedId: (r) => (r.store?.ok ? (r.store.value as { id: string }).id : null) });
+    const res = await handle(post({ message: '本文' }));
+    expect(await res.json()).toMatchObject({ ok: true, id: '42' });
+    const fetcher = (async (_url: string, init: RequestInit) => handle(new Request('https://app.example.com/', init))) as unknown as typeof fetch;
+    const body = new FormData();
+    body.set('message', '本文');
+    expect(await submitForm('/api/form', body, { fetch: fetcher })).toEqual({ ok: true, id: '42' });
   });
 });
 
@@ -165,5 +184,54 @@ describe('submitForm', () => {
   it('通信の失敗と想定外の応答は network', async () => {
     expect(await submitForm('/api/form', new FormData(), { fetch: (async () => Promise.reject(new TypeError('offline'))) as unknown as typeof fetch })).toEqual({ ok: false, error: 'network', problems: [] });
     expect(await submitForm('/api/form', new FormData(), { fetch: (async () => new Response('<html>', { status: 502 })) as unknown as typeof fetch })).toEqual({ ok: false, error: 'network', problems: [] });
+  });
+});
+
+describe('httpDestination', () => {
+  it('値を JSON で転送し、応答の JSON を値にする。鍵のヘッダーと相関の ID を送る', async () => {
+    const calls: { url: string; init: RequestInit }[] = [];
+    const fetcher = (async (url: string, init: RequestInit) => {
+      calls.push({ url, init });
+      return Response.json({ id: '7' }, { status: 201 });
+    }) as unknown as typeof fetch;
+    const d = httpDestination({ name: 'cms', url: 'https://cms.example.com/forms/contact', headers: { authorization: 'Bearer key' }, fetch: fetcher });
+    expect(d.name).toBe('cms');
+    expect(await d.deliver(submission, { requestId: 'r1' })).toEqual({ ok: true, value: { id: '7' } });
+    expect(JSON.parse(String(calls[0]!.init.body))).toEqual(submission.values);
+    expect(calls[0]!.init.headers).toMatchObject({ authorization: 'Bearer key', 'x-request-id': 'r1' });
+    expect(calls[0]!.init.redirect).toBe('manual');
+  });
+
+  it('2xx 以外は status_<状態>、URL がなければ ConfigError', async () => {
+    const fetcher = (async () => new Response('', { status: 400 })) as unknown as typeof fetch;
+    expect(await httpDestination({ url: 'https://cms.example.com/', fetch: fetcher }).deliver(submission, { requestId: 'r' })).toEqual({ ok: false, error: 'status_400' });
+    await expect(httpDestination({ url: undefined }).deliver(submission, { requestId: 'r' })).rejects.toBeInstanceOf(ConfigError);
+  });
+});
+
+describe('webhookDestination の選択肢', () => {
+  it('名前、署名のヘッダー名、鍵ごとの v1、本文の id', async () => {
+    let sent: { headers: Record<string, string>; body: string } | undefined;
+    const fetcher = (async (_url: string, init: RequestInit) => {
+      sent = { headers: init.headers as Record<string, string>, body: String(init.body) };
+      return new Response(null, { status: 204 });
+    }) as unknown as typeof fetch;
+    const d = webhookDestination({ url: 'https://hooks.example.com/in', name: 'hook-1', secret: ['new', 'old'], signatureHeader: 'x-cms-signature', fetch: fetcher });
+    expect(d.name).toBe('hook-1');
+    expect((await d.deliver(submission, { requestId: 'r' })).ok).toBe(true);
+    expect(sent!.headers['x-cms-signature']).toMatch(/^t=\d+,v1=[\w-]+,v1=[\w-]+$/);
+    expect(sent!.headers['x-signature']).toBeUndefined();
+    expect(JSON.parse(sent!.body)).toMatchObject({ event: 'form.submitted', id: expect.stringMatching(/^[0-9a-f-]{36}$/), form: 'inquiry' });
+  });
+
+  it('鍵の配列の v1 は、鍵1つの署名と同じ値', async () => {
+    const request = { method: 'POST', url: 'https://hooks.example.com/in', body: '{}' };
+    const both = await signWebhook(['a', 'b'], request, 1_800_000_000_000);
+    const [a, b] = [await signWebhook('a', request, 1_800_000_000_000), await signWebhook('b', request, 1_800_000_000_000)];
+    expect(both).toBe(`${a},${b.split(',')[1]}`);
+  });
+
+  it('heading は通知の本文の先頭', () => {
+    expect(notificationText(submission, { ...copy, heading: '[Example] お問い合わせ' }).split('\n\n')[0]).toBe('[Example] お問い合わせ');
   });
 });

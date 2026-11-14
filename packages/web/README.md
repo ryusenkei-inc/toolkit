@@ -63,7 +63,7 @@ export default {
 
 ## Forms (`@ryusenkei/web/form`)
 
-Contact, feedback, and sign-up forms without writing the plumbing each time: declare the fields, and get sanitizing, validation, rate limiting, bot checks, and delivery by email or webhook. The server side is a standard `(Request) => Response` function, so it runs on Cloudflare Workers, Vercel, Astro endpoints, and Hono.
+Contact, feedback, and sign-up forms without writing the plumbing each time: declare the fields, and get sanitizing, validation, standard error messages, rate limiting, bot checks, and delivery by email, webhook, or another API. The server side is a standard `(Request) => Response` function, so it runs on Cloudflare Workers, Vercel, Astro endpoints, and Hono.
 
 ### Declare a form
 
@@ -81,19 +81,34 @@ export const feedback = defineForm({
 
 | Kind | Options | Sanitizing | Codes |
 | --- | --- | --- | --- |
-| `text` | `maxLength` | Line breaks and control characters become spaces | `too_long` |
-| `multiline` | `maxLength` | Line breaks become `\n`, other control characters are removed | `too_long` |
+| `text` | `maxLength`, `minLength?` | Line breaks and control characters become spaces | `too_long`, `too_short` |
+| `multiline` | `maxLength`, `minLength?` | Line breaks become `\n`, other control characters are removed | `too_long`, `too_short` |
 | `email` | `maxLength` (default 254) | As `text` | `too_long`, `invalid_email` |
 | `url` | `maxLength`, `hosts?` | As `text` | `too_long`, `invalid_url` (http/https only), `url_host` |
 | `choice` | `choices` | None | `invalid_choice` |
 
-- `required: true` adds `required`.
+- `required: true` adds `required`. `requiredWhen: { field: 'type', in: ['correction'] }` makes a field required only when another field has one of the listed values.
 - Field order is the order for display, validation, and the notification body.
 - Lengths count UTF-16 code units, the same as HTML `maxlength`.
 - U+0085, U+2028, and U+2029 count as line breaks too, so a one-line field can't inject a mail header.
-- `refine(values)` adds rules across fields (for example, "a correction needs a URL"). It runs only when every field passed.
+- `refine(values)` adds rules that a declaration can't express. It runs only when every field passed.
+- Without `refine`, a declaration is plain JSON. A server can send it to the page, so the page and the handler check with the same declaration.
 
-`parseForm(form, formDataOrObject)` returns `{ ok: true, values }` or `{ ok: false, problems }`, where each problem is `{ path, code, params? }` (`too_long` has `params.max`). There is no text; look the codes up in your dictionary.
+`parseForm(form, formDataOrObject)` returns `{ ok: true, values }` or `{ ok: false, problems }`, where each problem is `{ path, code, params? }` (`too_long` has `params.max`, `too_short` has `params.min`).
+
+### Messages
+
+Problems and handler results carry codes only. `FORM_MESSAGES_JA` has standard Japanese messages for every code, and `problemMessage` and `formMessage` fill in `params`:
+
+```ts
+import { formMessage, problemMessage } from '@ryusenkei/web/form';
+
+problemMessage({ path: 'message', code: 'too_short', params: { min: 10 } }); // '10文字以上で入力してください'
+problemMessage(problem, { url_host: 'サイトの記事の URL を入力してください' }); // a product's own wording wins
+formMessage(result.error); // handler results such as 'rate_limited' and 'network'
+```
+
+An unknown code (for example one from `refine`) comes back as is unless you pass a message for it.
 
 ### Handle submissions (`@ryusenkei/web/form/server`)
 
@@ -118,14 +133,14 @@ The order is validate, then rate limit, then bot check, then deliver. Validation
 
 | Result | Status | `error` |
 | --- | --- | --- |
-| Accepted (at least one destination succeeded) | 200 | — |
+| Accepted (at least one destination succeeded) | 200 | —, with `id` when `acceptedId` is set |
 | Not `POST` | 405 | `method_not_allowed` |
 | Body over `maxBodyBytes` (default 64 KiB) | 413 | `too_large` |
 | Invalid fields, or an unknown form name | 400 | `invalid`, with `problems` |
 | Rate limited | 429 | `rate_limited` |
 | Bot check rejected | 403 | `bot_check_failed` |
 | Every destination failed | 502 | `unavailable` |
-| Infrastructure failure (an outage, a missing setting) | 503 / 500 | from `failureResponse` |
+| Infrastructure failure (an outage, a missing setting, no destinations) | 503 / 500 | from `failureResponse` |
 
 How submissions are read and logged:
 
@@ -136,9 +151,22 @@ How submissions are read and logged:
 Destinations:
 
 - `mailDestination`: sends `notificationText` (each field as `■ label` and its value, in declared order). Replies go to the submitter's `email` and `name`.
-- `webhookDestination`: posts JSON (`{ event: 'form.submitted', form, values, order, receivedAt }`) or Slack text, with a 3-second timeout and no redirects.
+- `webhookDestination`: posts JSON (`{ event: 'form.submitted', id, form, values, order, receivedAt }`, where `id` is a UUID per submission for deduplication) or Slack text, with a 3-second timeout and no redirects.
   - With `secret`, it adds `x-signature: t=<seconds>,v1=<HMAC-SHA256>`. `signWebhook` builds the same value for verification.
-- Write your own as `{ name, deliver(submission) }`.
+  - `signatureHeader` renames the header. During a key rotation, pass `secret` as an array (new key first); each key adds its own `v1`.
+  - `name` (default `webhook`) tells several webhooks apart in logs and results. `copy.heading` puts a line above the Slack text.
+- `httpDestination`: forwards the values as JSON to another API, for example from a site's server to a CMS that stores the submission. It sends `headers` (such as an API key) and `x-request-id`; a 2xx answer is success, and its JSON body becomes the destination's value. `body` changes what is sent.
+- Write your own as `{ name, deliver(submission) }`. Names must be unique.
+
+`acceptedId(results)` picks the `id` for the accepted response from the results by destination name (`{ ok: true, value }` or `{ ok: false, reason }`), for example the number a store returned:
+
+```ts
+submissionHandler({
+  forms: { contact },
+  destinations: [httpDestination({ name: 'cms', url: env.CMS_FORM_URL, headers: { authorization: `Bearer ${env.CMS_KEY}` } })],
+  acceptedId: (r) => (r.cms?.ok ? (r.cms.value as { id: string }).id : null),
+});
+```
 
 `rateLimiter` and `botCheck` are structural types, so anything with `limit(key)` / `verify(input)` returning a `Result` works.
 
@@ -150,6 +178,8 @@ import { submitForm } from '@ryusenkei/web/form/client';
 const result = await submitForm('/api/form', new FormData(formElement));
 if (!result.ok) showErrors(result.error, result.problems); // codes only; 'network' when there was no usable response
 ```
+
+An accepted result has `id` when the handler set one.
 
 ### Testing (`@ryusenkei/web/form/testing`)
 
