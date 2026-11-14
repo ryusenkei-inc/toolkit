@@ -2,25 +2,27 @@ import type { ChildProcess, SpawnOptions, SpawnSyncOptions } from 'node:child_pr
 import { createInterface } from 'node:readline';
 import spawn from 'cross-spawn';
 
+// 名前の末尾の `Sync` は終わるまで待つ同期の実行、ないものは Promise を返す非同期の実行
+
 /**
- * 子プロセスの実行（標準入出力は親と共有、戻り値は終了コード）
+ * 子プロセスの同期の実行（標準入出力は親と共有、戻り値は終了コード）
  * - Windows の .cmd（pnpm・npx など）も引数を加工せずに指定、シェルの引用は cross-spawn が処理
  */
-export function exec(command: string, args: string[], options: SpawnSyncOptions = {}): number {
+export function execSync(command: string, args: string[], options: SpawnSyncOptions = {}): number {
   const { status } = spawn.sync(command, args, { stdio: 'inherit', ...options });
   return status ?? 1;
 }
 
-/** 標準出力を文字列で受け取る実行（失敗は null、標準エラーはそのまま表示） */
-export function execOutput(command: string, args: string[], options: SpawnSyncOptions = {}): string | null {
+/** 標準出力を文字列で受け取る同期の実行（失敗は null、標準エラーはそのまま表示） */
+export function execOutputSync(command: string, args: string[], options: SpawnSyncOptions = {}): string | null {
   const { status, stdout } = spawn.sync(command, args, { stdio: ['inherit', 'pipe', 'inherit'], encoding: 'utf8', ...options });
   return status === 0 ? String(stdout).trim() : null;
 }
 
-/** 標準出力のうち keep が真の行だけを表示する実行（秘密の値を含む出力から、案内の行だけを表示） */
-export function execFiltered(command: string, args: string[], keep: (line: string) => boolean): Promise<number> {
+/** 標準出力のうち keep が真の行だけを表示する非同期の実行（秘密の値を含む出力から、案内の行だけを表示） */
+export function execFiltered(command: string, args: string[], keep: (line: string) => boolean, options: SpawnOptions = {}): Promise<number> {
   return new Promise((resolve) => {
-    const child = spawn(command, args, { stdio: ['inherit', 'pipe', 'inherit'] });
+    const child = spawn(command, args, { ...options, stdio: ['inherit', 'pipe', 'inherit'] });
     createInterface({ input: child.stdout! }).on('line', (line) => {
       if (keep(line)) console.log(line);
     });

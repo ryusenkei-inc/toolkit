@@ -36,7 +36,12 @@ export const DEFAULT_STALE_MS = 60 * 60_000;
  * - `free`: ロックなし、壊れた内容、古いロック（`stale` に持ち主）。上書きしてよい
  * - `held`: ほかのデプロイが実行中
  */
-export function lockStateOf(content: string | null | undefined, now: number, staleMs = DEFAULT_STALE_MS): Readonly<{ kind: 'free'; stale?: DeployLockInfo } | { kind: 'held'; lock: DeployLockInfo }> {
+export function lockStateOf(
+  content: string | null | undefined,
+  options: Readonly<{ now?: () => number; staleMs?: number }> = {},
+): Readonly<{ kind: 'free'; stale?: DeployLockInfo } | { kind: 'held'; lock: DeployLockInfo }> {
+  const now = (options.now ?? Date.now)();
+  const staleMs = options.staleMs ?? DEFAULT_STALE_MS;
   if (!content?.trim()) return { kind: 'free' };
   let lock: DeployLockInfo;
   try {
@@ -89,7 +94,7 @@ export async function acquireDeployLock(store: LockStore, options: DeployLockOpt
   // 2回目は、同時に取りにいって負けたときの読み直し
   for (let attempt = 0; attempt < 2; attempt++) {
     const existing = await store.read();
-    const state = lockStateOf(existing?.content, now(), options.staleMs);
+    const state = lockStateOf(existing?.content, options);
     if (state.kind === 'held') return state;
     const at = new Date(now()).toISOString();
     const version = await store.write(JSON.stringify({ owner, at }), existing?.version ?? null);
@@ -97,7 +102,7 @@ export async function acquireDeployLock(store: LockStore, options: DeployLockOpt
     return { kind: 'acquired', lock: heldLock(store, { owner, at, ...(state.stale && { stale: state.stale }) }, version, options.releaseOnExit ?? true) };
   }
   const latest = await store.read();
-  const state = lockStateOf(latest?.content, now(), options.staleMs);
+  const state = lockStateOf(latest?.content, options);
   return { kind: 'held', lock: state.kind === 'held' ? state.lock : { owner: '(不明)', at: new Date(now()).toISOString() } };
 }
 

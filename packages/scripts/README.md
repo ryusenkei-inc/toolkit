@@ -8,7 +8,9 @@ Shared scripts for RYUSENKEI repositories: running child processes on Windows an
 pnpm add -D @ryusenkei/scripts
 ```
 
-Requires Node.js 24 or later.
+Requires Node.js 24 or later. Failures are thrown as the error types of [`@ryusenkei/core`](../core): a 401 or 403 (credentials, permissions) is `ConfigError`, a connection failure or a 408, 429, or 5xx is `TransientError`, and any other refused request is `UsageError` with a `code` such as `lock_write_failed` or `google_api_failed`.
+
+Required arguments are positional and optional settings go in a trailing options object. Clocks are `now: () => number` (milliseconds), and `fetch` replacements are named `fetch`.
 
 ## `.env` CLI
 
@@ -56,22 +58,34 @@ With `terraform: { stateBucket, stateKeyPrefix, tokenVar? }`, `tf` runs `terrafo
 
 - `CLOUDFLARE_API_TOKEN` is set from the Terraform token (`CF_TERRAFORM_TOKEN` by default), kept separate from the deploy token.
 - `AWS_ENDPOINT_URL_S3` points at the account's R2 (`CLOUDFLARE_ACCOUNT_ID`).
-- The R2 credentials are derived from the token (`AWS_ACCESS_KEY_ID` is the token's ID, `AWS_SECRET_ACCESS_KEY` the SHA-256 of its value), unless `.env` sets them explicitly.
+- The R2 credentials are derived from the token with `r2CredentialsOf` (`AWS_ACCESS_KEY_ID` is the token's ID, `AWS_SECRET_ACCESS_KEY` the SHA-256 of its value), unless `.env` sets them explicitly.
 - `init` gets the backend settings: the bucket, the key `<stateKeyPrefix>/<stack directory name>.tfstate` (from `-chdir`), `use_lockfile=true` for state locking, and the S3 checks R2 doesn't support turned off.
+
+Exit status: 0 on success, 1 when a subcommand fails, and 2 for a usage error (an unknown subcommand, or `run` without a command). `--help` prints the usage and exits with 0.
 
 `commands` adds repository-specific subcommands. Each one gets `ctx.values()` (the `.env` values) and `ctx.run(args, extra)` (like `run`, with extra variables on top of `.env`).
 
 ## Child processes
 
 ```ts
-import { exec, execOutput, execCapture } from '@ryusenkei/scripts';
+import { execCapture, execOutputSync, execSync } from '@ryusenkei/scripts';
 
-exec('pnpm', ['install']); // exit code, stdio shared with the parent
-const sha = execOutput('git', ['rev-parse', 'HEAD']); // stdout, or null on failure
+execSync('pnpm', ['install']); // exit code, stdio shared with the parent
+const sha = execOutputSync('git', ['rev-parse', 'HEAD']); // stdout, or null on failure
 const { status, output } = await execCapture('pnpm', ['test']); // stdout and stderr in one string
 ```
 
-All of them use [cross-spawn](https://github.com/moxystudio/node-cross-spawn), so `.cmd` shims such as `pnpm` and `npx` work on Windows without a shell. Also exported: `execFiltered` (prints only the lines you keep), `startProcess` and `stopProcess` (long-running processes, stopped with their children), and `currentRepo()` (`owner/name` of the working tree, from `gh`).
+A name ending in `Sync` blocks until the process ends; the others return a `Promise`.
+
+| Function | Returns | Output |
+| --- | --- | --- |
+| `execSync(command, args, options?)` | the exit code | shared with the parent |
+| `execOutputSync(command, args, options?)` | stdout, or `null` on failure | stderr shared with the parent |
+| `execCapture(command, args, options?)` | `Promise<{ status, output }>` | stdout and stderr in one string, so parallel runs don't mix |
+| `execFiltered(command, args, keep, options?)` | `Promise<number>` (exit code) | prints only the stdout lines `keep` accepts, for output that contains secrets |
+| `startProcess(command, args, options?)` / `stopProcess(child)` | a `ChildProcess` | long-running processes, stopped with their children |
+
+All of them use [cross-spawn](https://github.com/moxystudio/node-cross-spawn), so `.cmd` shims such as `pnpm` and `npx` work on Windows without a shell. `currentRepo({ cwd? })` gives `owner/name` of the working tree, from `gh`.
 
 ## Deploy lock
 
@@ -81,7 +95,8 @@ Keeps two deploys (another session, another machine) from changing production at
 import { r2CredentialsOf, r2LockStore, withDeployLock } from '@ryusenkei/scripts';
 
 const credentials = await r2CredentialsOf(env.CF_TERRAFORM_TOKEN, env.CLOUDFLARE_ACCOUNT_ID);
-const store = r2LockStore({ accountId: env.CLOUDFLARE_ACCOUNT_ID, bucket: 'company-tfstate', key: 'example/deploy.lock', credentials: { accessKeyId: credentials.AWS_ACCESS_KEY_ID, secretAccessKey: credentials.AWS_SECRET_ACCESS_KEY } });
+if (!credentials) throw new Error('R2 の認証をトークンから導出できない');
+const store = r2LockStore({ accountId: env.CLOUDFLARE_ACCOUNT_ID, bucket: 'company-tfstate', key: 'example/deploy.lock', credentials });
 
 await withDeployLock(store, async () => {
   // terraform apply, wrangler deploy, ...
@@ -96,10 +111,10 @@ await withDeployLock(store, async () => {
 
 | Store | Where | Credentials |
 | --- | --- | --- |
-| `r2LockStore({ accountId, bucket, key, credentials })` | An R2 object, through the S3 API (`If-None-Match` / `If-Match` on the ETag) | S3 credentials: `r2CredentialsOf` from the Terraform token, or an R2 API token |
+| `r2LockStore({ accountId, bucket, key, credentials })` | An R2 object, through the S3 API (`If-None-Match` / `If-Match` on the ETag) | S3 credentials (`{ accessKeyId, secretAccessKey }`): `r2CredentialsOf(token, accountId)` from the Terraform token, or an R2 API token. `s3CredentialsEnv(credentials)` turns them into `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` |
 | `gcsLockStore({ bucket, key, accessToken })` | A GCS object, through the JSON API (`ifGenerationMatch`) | An access token function, such as `gcloudAccessToken()` |
 
-A store is `{ name, read, write, remove, removeRequest }` (`LockStore`), so another backend fits in the same way.
+A store is `{ name, read, write, remove, removeRequest }` (`LockStore`), so another backend fits in the same way. `lockStateOf(content, { now?, staleMs? })` reads a stored lock without a store.
 
 ## Post-deploy checks
 
@@ -135,11 +150,14 @@ npx ryusenkei-search-console submit sc-domain:example.com https://example.com/si
 npx ryusenkei-search-console sitemaps sc-domain:example.com
 ```
 
+Exit status: 0 on success, 1 when an API call fails, and 2 for a usage error. `--help` prints the usage and exits with 0.
+
 Put the TXT value into DNS with the Terraform module `search-console-verification`. The same calls are exported as functions: `siteVerificationToken`, `verifyDomain`, `addSite`, `submitSitemap`, `listSitemaps`, and `domainProperty`.
 
 Credentials are yours to provide; nothing here creates keys:
 
 - `GOOGLE_APPLICATION_CREDENTIALS` set to a service account key file: `serviceAccountToken(key, scopes)` signs a JWT and gets a token. Add the service account as an owner of the property (or verify with its own TXT value) before it can submit sitemaps.
+- `googleAccessToken(scopes, { env? })` picks between the two from `GOOGLE_APPLICATION_CREDENTIALS`. A rejected key (400) or a missing gcloud login throws `ConfigError`.
 - Otherwise, your gcloud login (`gcloudAccessToken()`). Log in once with the Search Console scopes:
 
   ```sh
@@ -154,7 +172,7 @@ Credentials are yours to provide; nothing here creates keys:
 npx ryusenkei-licenses [--prod] [--allow <SPDX id>]... [--ignore <package>]...
 ```
 
-Reads `pnpm licenses list --json` and fails on a dependency whose license is not allowed. The default list (`DEFAULT_ALLOWED_LICENSES`) is 0BSD, Apache-2.0, BSD-2-Clause, BSD-3-Clause, CC0-1.0, ISC, MIT, MIT-0, MPL-2.0, Unicode-3.0, Unlicense, and Zlib, which suits a product you sell. SPDX expressions with `OR`, `AND`, and `WITH` are understood. Write down why you allowed a license or ignored a package. `licenseAllowed` and `licenseViolations` are exported for your own scripts.
+Reads `pnpm licenses list --json` and fails on a dependency whose license is not allowed. The default list (`DEFAULT_ALLOWED_LICENSES`) is 0BSD, Apache-2.0, BSD-2-Clause, BSD-3-Clause, CC0-1.0, ISC, MIT, MIT-0, MPL-2.0, Unicode-3.0, Unlicense, and Zlib, which suits a product you sell. SPDX expressions with `OR`, `AND`, and `WITH` are understood. Write down why you allowed a license or ignored a package. Exit status: 0 when every license is allowed, 1 for a disallowed license or a failed `pnpm licenses list`, and 2 for a usage error; `--help` exits with 0. `licenseAllowed(expression, { allowed? })` and `licenseViolations(listing, { allowed?, ignore? })` are exported for your own scripts.
 
 ## Repository settings
 
@@ -162,11 +180,15 @@ Reads `pnpm licenses list --json` and fails on a dependency whose license is not
 npx ryusenkei-repo-settings [owner/name]
 ```
 
-Run it once after creating a repository, since settings are not copied from a template. It sets:
+Run it once after creating a repository, since settings are not copied from a template. It exits with the status of `gh`, or 2 for a usage error. It sets:
 
 - Squash merge only, with the PR title as the commit title and an empty body
 - Merge commits and rebase merges off, also with the epic flow (`dev/*` → `main` is squashed too)
 - Delete branches after merge
+
+## Versioning
+
+While the version is 0.x, a minor bump may break the API. See the [CHANGELOG](CHANGELOG.md) for what changed and how to migrate.
 
 ## License
 

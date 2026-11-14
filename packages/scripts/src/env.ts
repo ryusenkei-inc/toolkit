@@ -4,9 +4,9 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseEnv } from 'node:util';
-import { exec } from './exec.ts';
+import { execSync } from './exec.ts';
 import { currentRepo } from './repo.ts';
-import { backendConfigArgs, r2CredentialsOf, stackOf, stateKeyOf, type TerraformConfig } from './terraform.ts';
+import { backendConfigArgs, r2CredentialsOf, s3CredentialsEnv, stackOf, stateKeyOf, type TerraformConfig } from './terraform.ts';
 
 /** 配信先。`wrangler:secret:<worker>` は Worker の秘密値（`wrangler secret put --name <worker>`） */
 export type Target = 'github:variable' | 'github:secret' | `wrangler:secret:${string}`;
@@ -59,7 +59,10 @@ export function pushPlan(values: EnvValues, targets: Record<string, Target[]>, o
   return { skips, items };
 }
 
-/** CLI を実行して終了。サブコマンドは `run`・`push` と `commands` */
+/**
+ * CLI を実行して終了。サブコマンドは `run`・`push` と `commands`
+ * - 終了の状態: 成功は0、失敗は1（サブコマンドの値）、使い方の誤りは2。`--help` は使い方を表示して0
+ */
 export async function envCli(config: EnvConfig, argv = process.argv.slice(2)): Promise<never> {
   const root = typeof config.root === 'string' ? config.root : fileURLToPath(config.root);
   const envPath = join(root, '.env');
@@ -75,10 +78,10 @@ export async function envCli(config: EnvConfig, argv = process.argv.slice(2)): P
     const [cmd, ...rest] = command;
     if (!cmd) {
       console.error('usage: node scripts/env.ts run [NAME=value ...] <command> [...args]');
-      return 1;
+      return 2;
     }
     Object.assign(process.env, values(), extra, env);
-    return exec(cmd, rest);
+    return execSync(cmd, rest);
   };
   const ctx: EnvContext = { root, values, run };
 
@@ -87,7 +90,7 @@ export async function envCli(config: EnvConfig, argv = process.argv.slice(2)): P
     const at = args.indexOf('--only');
     const plan = pushPlan(values(), config.targets, at === -1 ? undefined : args[at + 1]);
     for (const skip of plan.skips) console.warn(`skip  ${skip}`);
-    const repo = dryRun || !plan.items.some((i) => i.target.startsWith('github:')) ? '' : currentRepo(root);
+    const repo = dryRun || !plan.items.some((i) => i.target.startsWith('github:')) ? '' : currentRepo({ cwd: root });
     let failed = false;
     for (const { key, target, value } of plan.items) {
       console.log(`${dryRun ? 'plan' : 'push'}  ${key} → ${target}`);
@@ -110,7 +113,7 @@ export async function envCli(config: EnvConfig, argv = process.argv.slice(2)): P
     const extra: EnvValues = { CLOUDFLARE_API_TOKEN: token, AWS_ENDPOINT_URL_S3: env.AWS_ENDPOINT_URL_S3 ?? `https://${accountId}.r2.cloudflarestorage.com` };
     if (!(env.AWS_ACCESS_KEY_ID && env.AWS_SECRET_ACCESS_KEY)) {
       const credentials = await r2CredentialsOf(token, accountId);
-      if (credentials) Object.assign(extra, credentials);
+      if (credentials) Object.assign(extra, s3CredentialsEnv(credentials));
       else console.warn('R2 の認証をトークンから導出できない（.env に AWS_ACCESS_KEY_ID・AWS_SECRET_ACCESS_KEY を設定）');
     }
     const stack = stackOf(args);
@@ -125,10 +128,15 @@ export async function envCli(config: EnvConfig, argv = process.argv.slice(2)): P
     ...Object.fromEntries(Object.entries(config.commands ?? {}).map(([name, fn]) => [name, (args: string[]) => fn(args, ctx)])),
   };
   const [subcommand, ...rest] = argv;
+  const usage = `usage: node scripts/env.ts <${Object.keys(commands).join('|')}> ...`;
+  if (subcommand === '--help' || subcommand === '-h') {
+    console.log(usage);
+    process.exit(0);
+  }
   const handler = subcommand ? commands[subcommand] : undefined;
   if (!handler) {
-    console.error(`usage: node scripts/env.ts <${Object.keys(commands).join('|')}> ...`);
-    process.exit(1);
+    console.error(usage);
+    process.exit(2);
   }
   process.exit(await handler(rest));
 }
@@ -136,6 +144,6 @@ export async function envCli(config: EnvConfig, argv = process.argv.slice(2)): P
 // 値は標準入力で渡す（プロセスの引数に出さない）
 function pushTo(root: string, repo: string, target: Target, key: string, value: string): number {
   const options: SpawnSyncOptions = { input: value, stdio: ['pipe', 'inherit', 'inherit'], cwd: root };
-  if (target === 'github:variable' || target === 'github:secret') return exec('gh', [target === 'github:variable' ? 'variable' : 'secret', 'set', key, '--repo', repo], options);
-  return exec('pnpm', ['exec', 'wrangler', 'secret', 'put', key, '--name', target.slice('wrangler:secret:'.length)], options);
+  if (target === 'github:variable' || target === 'github:secret') return execSync('gh', [target === 'github:variable' ? 'variable' : 'secret', 'set', key, '--repo', repo], options);
+  return execSync('pnpm', ['exec', 'wrangler', 'secret', 'put', key, '--name', target.slice('wrangler:secret:'.length)], options);
 }

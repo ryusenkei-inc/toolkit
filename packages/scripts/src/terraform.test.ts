@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
-import { backendConfigArgs, r2CredentialsOf, stackOf, stateKeyOf } from './terraform.ts';
+import { backendConfigArgs, r2CredentialsOf, s3CredentialsEnv, stackOf, stateKeyOf } from './terraform.ts';
 
 describe('stackOf', () => {
   it('-chdir のディレクトリと、最初のサブコマンド', () => {
@@ -34,12 +34,13 @@ describe('r2CredentialsOf', () => {
       urls.push(url);
       return url.includes('/accounts/') ? reply({ success: false }) : reply({ success: true, result: { id: 'tok-id' } });
     }) as unknown as typeof fetch;
-    expect(await r2CredentialsOf('secret-token', 'acc', fetcher)).toEqual({ AWS_ACCESS_KEY_ID: 'tok-id', AWS_SECRET_ACCESS_KEY: createHash('sha256').update('secret-token').digest('hex') });
+    expect(await r2CredentialsOf('secret-token', 'acc', { fetch: fetcher })).toEqual({ accessKeyId: 'tok-id', secretAccessKey: createHash('sha256').update('secret-token').digest('hex') });
+    expect(s3CredentialsEnv({ accessKeyId: 'a', secretAccessKey: 'b' })).toEqual({ AWS_ACCESS_KEY_ID: 'a', AWS_SECRET_ACCESS_KEY: 'b' });
     expect(urls).toEqual(['https://api.cloudflare.com/client/v4/accounts/acc/tokens/verify', 'https://api.cloudflare.com/client/v4/user/tokens/verify']);
   });
 
   it('どちらも失敗すれば undefined（通信の失敗を含む）', async () => {
     const fetcher = (async () => Promise.reject(new TypeError('offline'))) as unknown as typeof fetch;
-    expect(await r2CredentialsOf('t', 'acc', fetcher)).toBeUndefined();
+    expect(await r2CredentialsOf('t', 'acc', { fetch: fetcher })).toBeUndefined();
   });
 });

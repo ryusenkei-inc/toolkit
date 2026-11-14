@@ -1,8 +1,12 @@
 // Google の API のアクセストークンと、Search Console（所有権の確認、プロパティ、sitemap）の呼び出し
 // - 鍵は作らない。使う側がサービスアカウントの鍵か、gcloud のログイン（ADC）を渡す
+// - 失敗: 認証と権限は `ConfigError`、接続の失敗と一時的な状態（408、429、5xx）は `TransientError`
+// - ほかの失敗は `UsageError`（`google_api_failed` など）
 import { createSign } from 'node:crypto';
 import { readFileSync } from 'node:fs';
-import { execOutput } from './exec.ts';
+import { ConfigError } from '@ryusenkei/core';
+import { execOutputSync } from './exec.ts';
+import { httpFailure, send } from './failure.ts';
 
 /** アクセストークンを返す関数（期限の前に作り直す） */
 export type AccessToken = () => Promise<string>;
@@ -37,13 +41,15 @@ export function serviceAccountToken(key: ServiceAccountKey | string, scopes: rea
     const iat = Math.floor(now() / 1000);
     const unsigned = `${base64url(JSON.stringify({ alg: 'RS256', typ: 'JWT' }))}.${base64url(JSON.stringify({ iss: k.client_email, scope: scopes.join(' '), aud: tokenUri, iat, exp: iat + 3600 }))}`;
     const signature = createSign('RSA-SHA256').update(unsigned).sign(k.private_key);
-    const res = await fetcher(tokenUri, {
+    const res = await send('Google のトークンの API', () => fetcher(tokenUri, {
       method: 'POST',
       headers: { 'content-type': 'application/x-www-form-urlencoded' },
       body: new URLSearchParams({ grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer', assertion: `${unsigned}.${base64url(signature)}` }),
       signal: AbortSignal.timeout(15_000),
-    });
-    if (!res.ok) throw new Error(`google_token_failed: ${res.status} ${(await res.text().catch(() => '')).slice(0, 300)}`);
+    }));
+    // 状態が400なら鍵の誤り（invalid_grant など）なので、設定の誤りとして扱う
+    if (res.status === 400) throw new ConfigError(`Google のトークンを得られない（サービスアカウントの鍵の誤り）: ${(await res.text().catch(() => '')).slice(0, 300)}`, { key: 'GOOGLE_APPLICATION_CREDENTIALS' });
+    if (!res.ok) throw await httpFailure(res, 'google_token_failed', 'Google のトークンの取得の失敗');
     const body = (await res.json()) as { access_token: string; expires_in?: number };
     cached = { token: body.access_token, expiresAt: now() + (body.expires_in ?? 3600) * 1000 };
     return cached.token;
@@ -58,20 +64,20 @@ export function serviceAccountToken(key: ServiceAccountKey | string, scopes: rea
  */
 export function gcloudAccessToken(options: Readonly<{ now?: () => number; run?: () => string | null }> = {}): AccessToken {
   const now = options.now ?? Date.now;
-  const run = options.run ?? (() => execOutput('gcloud', ['auth', 'application-default', 'print-access-token']));
+  const run = options.run ?? (() => execOutputSync('gcloud', ['auth', 'application-default', 'print-access-token']));
   let cached: { token: string; at: number } | undefined;
   return async () => {
     if (cached && now() - cached.at < 50 * 60_000) return cached.token;
     const token = run();
-    if (!token) throw new Error('gcloud_token_failed: gcloud auth application-default login でログインする');
+    if (!token) throw new ConfigError('gcloud のトークンを得られない（gcloud auth application-default login でログインする）', { key: 'gcloud' });
     cached = { token, at: now() };
     return token;
   };
 }
 
 /** 環境変数からアクセストークン: `GOOGLE_APPLICATION_CREDENTIALS`（鍵のファイル）があればサービスアカウント、なければ gcloud のログイン */
-export function googleAccessToken(scopes: readonly string[], env: Readonly<Record<string, string | undefined>> = process.env): AccessToken {
-  const keyFile = env.GOOGLE_APPLICATION_CREDENTIALS;
+export function googleAccessToken(scopes: readonly string[], options: Readonly<{ env?: Readonly<Record<string, string | undefined>> }> = {}): AccessToken {
+  const keyFile = (options.env ?? process.env).GOOGLE_APPLICATION_CREDENTIALS;
   return keyFile ? serviceAccountToken(keyFile, scopes) : gcloudAccessToken();
 }
 
@@ -83,14 +89,14 @@ export const domainProperty = (domain: string): string => `sc-domain:${domain}`;
 type ApiOptions = Readonly<{ accessToken: AccessToken; fetch?: typeof fetch }>;
 
 async function googleApi<T>(options: ApiOptions, method: string, url: string, body?: unknown): Promise<T> {
-  const res = await (options.fetch ?? fetch)(url, {
+  const res = await send('Google の API', async () => (options.fetch ?? fetch)(url, {
     method,
     headers: { authorization: `Bearer ${await options.accessToken()}`, ...(body !== undefined && { 'content-type': 'application/json' }) },
     ...(body !== undefined && { body: JSON.stringify(body) }),
     signal: AbortSignal.timeout(30_000),
-  });
+  }));
+  if (!res.ok) throw await httpFailure(res, 'google_api_failed', `Google の API の失敗: ${method} ${new URL(url).pathname}`);
   const text = await res.text();
-  if (!res.ok) throw new Error(`google_api_failed: ${method} ${new URL(url).pathname} ${res.status} ${text.slice(0, 300)}`);
   return (text ? JSON.parse(text) : {}) as T;
 }
 

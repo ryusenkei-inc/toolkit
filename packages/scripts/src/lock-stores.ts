@@ -1,6 +1,9 @@
 // ロックの置き場所のアダプター: R2（S3 互換の API、署名は AWS Signature V4）と GCS（JSON API）
 // - 外部の SDK に依存しない。認証は使う側が渡す（R2 は `r2CredentialsOf` の値、GCS はアクセストークン）
+// - 失敗: 認証と権限（401、403）は `ConfigError`、接続の失敗と一時的な状態（408、429、5xx）は `TransientError`
+// - ほかの失敗は `UsageError`（`lock_*_failed`）
 import { createHash, createHmac } from 'node:crypto';
+import { httpFailure, send as sendOrThrow } from './failure.ts';
 import type { HttpRequestInit, LockStore, StoredLock } from './lock.ts';
 
 export type S3Credentials = Readonly<{ accessKeyId: string; secretAccessKey: string }>;
@@ -14,11 +17,11 @@ const encodePath = (key: string) => key.split('/').map((s) => encodeURIComponent
  * @param extra 足すヘッダー（`if-match` など。名前は小文字）
  */
 export function signS3Request(
-  input: Readonly<{ method: string; url: string; body?: string; region?: string; credentials: S3Credentials; extra?: Readonly<Record<string, string>>; now?: Date }>,
+  input: Readonly<{ method: string; url: string; body?: string; region?: string; credentials: S3Credentials; extra?: Readonly<Record<string, string>>; now?: () => number }>,
 ): HttpRequestInit {
   const url = new URL(input.url);
   const region = input.region ?? 'auto';
-  const amzDate = (input.now ?? new Date()).toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '');
+  const amzDate = new Date((input.now ?? Date.now)()).toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '');
   const date = amzDate.slice(0, 8);
   const payloadHash = sha256(input.body ?? '');
   const signed: Record<string, string> = { host: url.host, 'x-amz-content-sha256': payloadHash, 'x-amz-date': amzDate, ...input.extra };
@@ -34,11 +37,6 @@ export function signS3Request(
     method: input.method,
     headers: { ...headers, authorization: `AWS4-HMAC-SHA256 Credential=${input.credentials.accessKeyId}/${scope}, SignedHeaders=${names.join(';')}, Signature=${signature}` },
   };
-}
-
-async function failure(res: Response, what: string): Promise<Error> {
-  const text = (await res.text().catch(() => '')).slice(0, 300);
-  return new Error(`${what}: ${res.status} ${text}`);
 }
 
 export type R2LockStoreOptions = Readonly<{
@@ -62,25 +60,25 @@ export function r2LockStore(options: R2LockStoreOptions): LockStore {
   const endpoint = (options.endpoint ?? `https://${options.accountId}.r2.cloudflarestorage.com`).replace(/\/$/, '');
   const url = `${endpoint}/${encodeURIComponent(options.bucket)}/${encodePath(options.key)}`;
   const request = (method: string, body?: string, extra?: Record<string, string>) => signS3Request({ method, url, credentials: options.credentials, ...(body !== undefined && { body }), ...(extra && { extra }) });
-  const send = (r: HttpRequestInit, body?: string) => fetcher(r.url, { method: r.method, headers: r.headers, ...(body !== undefined && { body }), signal: AbortSignal.timeout(15_000) });
+  const send = (r: HttpRequestInit, body?: string) => sendOrThrow('ロックの置き場所（R2）', () => fetcher(r.url, { method: r.method, headers: r.headers, ...(body !== undefined && { body }), signal: AbortSignal.timeout(15_000) }));
   return {
     name: `r2://${options.bucket}/${options.key}`,
     async read(): Promise<StoredLock | null> {
       const res = await send(request('GET'));
       if (res.status === 404) return null;
-      if (!res.ok) throw await failure(res, 'lock_read_failed');
+      if (!res.ok) throw await httpFailure(res, 'lock_read_failed', 'ロックの読み込みの失敗');
       return { content: await res.text(), version: res.headers.get('etag') ?? '' };
     },
     async write(content, ifVersion) {
       const condition: Record<string, string> = ifVersion === null ? { 'if-none-match': '*' } : { 'if-match': ifVersion };
       const res = await send(request('PUT', content, { 'content-type': 'application/json', ...condition }), content);
       if (res.status === 412 || res.status === 409) return null;
-      if (!res.ok) throw await failure(res, 'lock_write_failed');
+      if (!res.ok) throw await httpFailure(res, 'lock_write_failed', 'ロックの書き込みの失敗');
       return res.headers.get('etag') ?? '';
     },
     async remove() {
       const res = await send(request('DELETE'));
-      if (!res.ok && res.status !== 404) throw await failure(res, 'lock_remove_failed');
+      if (!res.ok && res.status !== 404) throw await httpFailure(res, 'lock_remove_failed', 'ロックの削除の失敗');
     },
     removeRequest: () => request('DELETE'),
   };
@@ -113,22 +111,22 @@ export function gcsLockStore(options: GcsLockStoreOptions): LockStore {
   return {
     name: `gs://${options.bucket}/${options.key}`,
     async read(): Promise<StoredLock | null> {
-      const res = await fetcher(`${object}?alt=media`, { headers: await headers(), signal: timeout() });
+      const res = await sendOrThrow('ロックの置き場所（GCS）', async () => fetcher(`${object}?alt=media`, { headers: await headers(), signal: timeout() }));
       if (res.status === 404) return null;
-      if (!res.ok) throw await failure(res, 'lock_read_failed');
+      if (!res.ok) throw await httpFailure(res, 'lock_read_failed', 'ロックの読み込みの失敗');
       return { content: await res.text(), version: res.headers.get('x-goog-generation') ?? '' };
     },
     async write(content, ifVersion) {
       const query = new URLSearchParams({ uploadType: 'media', name: options.key, ifGenerationMatch: ifVersion ?? '0' });
-      const res = await fetcher(`${GCS}/upload/storage/v1/b/${encodeURIComponent(options.bucket)}/o?${query}`, { method: 'POST', headers: await headers({ 'content-type': 'application/json' }), body: content, signal: timeout() });
+      const res = await sendOrThrow('ロックの置き場所（GCS）', async () => fetcher(`${GCS}/upload/storage/v1/b/${encodeURIComponent(options.bucket)}/o?${query}`, { method: 'POST', headers: await headers({ 'content-type': 'application/json' }), body: content, signal: timeout() }));
       if (res.status === 412) return null;
-      if (!res.ok) throw await failure(res, 'lock_write_failed');
+      if (!res.ok) throw await httpFailure(res, 'lock_write_failed', 'ロックの書き込みの失敗');
       const body = (await res.json()) as { generation?: string };
       return String(body.generation ?? '');
     },
     async remove() {
-      const res = await fetcher(object, { method: 'DELETE', headers: await headers(), signal: timeout() });
-      if (!res.ok && res.status !== 404) throw await failure(res, 'lock_remove_failed');
+      const res = await sendOrThrow('ロックの置き場所（GCS）', async () => fetcher(object, { method: 'DELETE', headers: await headers(), signal: timeout() }));
+      if (!res.ok && res.status !== 404) throw await httpFailure(res, 'lock_remove_failed', 'ロックの削除の失敗');
     },
     removeRequest: () => ({ url: object, method: 'DELETE', headers: { authorization: `Bearer ${lastToken}` } }),
   };
