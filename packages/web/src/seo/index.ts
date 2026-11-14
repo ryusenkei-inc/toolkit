@@ -26,7 +26,42 @@ export function absoluteUrl(origin: Origin, path: string, options: Readonly<{ tr
 /** 正規の URL（`canonicalPath` を `origin` で絶対 URL にしたもの） */
 export const canonicalUrl = (origin: Origin, pathname: string, options: Readonly<{ trailingSlash?: boolean }> = {}): string => absoluteUrl(origin, canonicalPath(pathname), options);
 
-// ---- メタタグ
+// URL の正規化の転送（www なし、末尾のスラッシュなし）
+
+export type NormalizeOptions = Readonly<{
+  /** 正規のホスト。指定すると、ほかのホストをこのホストへ転送する。既定は先頭の `www.` を外したホスト */
+  host?: string;
+  /** 末尾のスラッシュを外す（既定は真。トップの `/` は残す） */
+  stripTrailingSlash?: boolean;
+  /** 対象の外のパス（API の経路、末尾のスラッシュが要る経路など）。接頭辞の一覧か関数 */
+  exclude?: readonly string[] | ((pathname: string) => boolean);
+}>;
+
+/**
+ * 正規化した URL（www なし、末尾のスラッシュなし。クエリと断片は保つ）
+ * - 対象の外のパスはホストだけを正規化する
+ */
+export function normalizeUrl(url: string | URL, options: NormalizeOptions = {}): string {
+  const u = new URL(url);
+  u.host = options.host ?? u.host.replace(/^www\./i, '');
+  const excluded = typeof options.exclude === 'function' ? options.exclude(u.pathname) : (options.exclude ?? []).some((p) => u.pathname.startsWith(p));
+  if (options.stripTrailingSlash !== false && !excluded && u.pathname !== '/') u.pathname = u.pathname.replace(/\/+$/, '') || '/';
+  return u.href;
+}
+
+/**
+ * 正規化の転送（`(Request) => Response | null`）。正規の URL と違えば状態301で転送し、同じなら `null`（次の処理へ）
+ * - 転送するのは GET と HEAD だけ（ほかの方式は状態301の転送で GET に変わるため）
+ * - 例: `return canonicalRedirect(request, { exclude: ['/api/'] }) ?? handle(request)`
+ */
+export function canonicalRedirect(request: Request, options: NormalizeOptions & Readonly<{ status?: 301 | 308 }> = {}): Response | null {
+  if (request.method !== 'GET' && request.method !== 'HEAD') return null;
+  const target = normalizeUrl(request.url, options);
+  if (target === new URL(request.url).href) return null;
+  return new Response(null, { status: options.status ?? 301, headers: { location: target } });
+}
+
+// メタタグ
 
 /** OG の画像。`url` は絶対 URL */
 export type OgImage = Readonly<{ url: string; alt?: string; width?: number; height?: number; type?: string }>;
@@ -106,7 +141,7 @@ export function headHtml(tags: readonly HeadTag[]): string {
 /** メタタグの HTML（`headHtml(metaTags(input))`） */
 export const metaTagsHtml = (input: MetaInput): string => headHtml(metaTags(input));
 
-// ---- JSON-LD
+// JSON-LD
 
 /** JSON-LD のノード */
 export type JsonLd = Readonly<Record<string, unknown>>;
@@ -214,7 +249,7 @@ export function itemListJsonLd(items: readonly Readonly<{ name: string; url: str
   });
 }
 
-// ---- sitemap と robots.txt
+// sitemap と robots.txt
 
 /** sitemap の1件。`loc` は絶対 URL か、`origin` を渡したときはルートからのパス */
 export type SitemapEntry = Readonly<{ loc: string; lastmod?: string; changefreq?: 'always' | 'hourly' | 'daily' | 'weekly' | 'monthly' | 'yearly' | 'never'; priority?: number }>;

@@ -441,6 +441,8 @@ new Response(robotsTxt({ sitemaps: [`${origin}/sitemap.xml`] }), { headers: { 'c
 | --- | --- |
 | `canonicalPath(pathname)` | The path without query, fragment, `.html`, a trailing `/index`, or a trailing slash. The top is `/` |
 | `canonicalUrl(origin, pathname, { trailingSlash? })`, `absoluteUrl(origin, path, ...)` | An absolute URL. The top is `https://example.com/`, or `https://example.com` with `trailingSlash: false` |
+| `normalizeUrl(url, options)` | The URL without `www.` and without a trailing slash, keeping the query (`/` stays) |
+| `canonicalRedirect(request, options)` | A 301 to `normalizeUrl` when the URL differs, otherwise `null`. Only for GET and HEAD |
 | `metaTags(input)` | `HeadTag[]` (`{ tag: 'title', text }` or `{ tag: 'meta' \| 'link', attrs }`) for your framework's head component |
 | `metaTagsHtml(input)`, `headHtml(tags)` | The same as escaped HTML, one element per line |
 | `jsonLdText(data)`, `jsonLdScript(data)` | JSON for a `<script type="application/ld+json">` with `<` escaped, or the whole element |
@@ -448,6 +450,19 @@ new Response(robotsTxt({ sitemaps: [`${origin}/sitemap.xml`] }), { headers: { 'c
 | `jsonLdGraph(nodes)` | One `@graph` from several nodes |
 | `sitemapXml(entries, { origin? })`, `sitemapIndexXml(sitemaps)` | A sitemap (duplicates removed, at most 50,000 URLs) or a sitemap index |
 | `robotsTxt({ rules?, sitemaps? })` | `robots.txt`. The default rule allows everything |
+
+URL normalization (`www`-less, no trailing slash) as the first step of a handler:
+
+```ts
+export default {
+  fetch: (request: Request) => canonicalRedirect(request, { exclude: ['/api/'] }) ?? handle(request),
+};
+```
+
+- `exclude`: path prefixes (or a function) that keep their trailing slash, such as API routes or an app mounted at `/manage/`. The host is still normalized.
+- `host`: the canonical host, to send every other host there. Leave it out in development, or `localhost` is sent to production. By default only a leading `www.` is removed.
+- `stripTrailingSlash: false` keeps trailing slashes; `status: 308` keeps the method.
+- To do this at the edge instead, use `strip_trailing_slash` of the Terraform module `www-redirect`.
 
 `metaTags` input:
 

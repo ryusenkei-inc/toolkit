@@ -3,6 +3,7 @@ import {
   absoluteUrl,
   articleJsonLd,
   breadcrumbJsonLd,
+  canonicalRedirect,
   canonicalPath,
   canonicalUrl,
   itemListJsonLd,
@@ -11,6 +12,7 @@ import {
   jsonLdText,
   metaTags,
   metaTagsHtml,
+  normalizeUrl,
   organizationJsonLd,
   robotsTxt,
   sitemapIndexXml,
@@ -32,6 +34,27 @@ describe('正規の URL', () => {
     expect(absoluteUrl('https://example.com/', '/', { trailingSlash: false })).toBe('https://example.com');
     expect(absoluteUrl(new URL('https://example.com'), '/a b')).toBe('https://example.com/a%20b');
     expect(canonicalUrl('https://example.com', '/blog/')).toBe('https://example.com/blog');
+  });
+});
+
+describe('URL の正規化', () => {
+  it('www と末尾のスラッシュを外し、クエリを保つ。トップと対象の外は残す', () => {
+    expect(normalizeUrl('https://www.example.com/privacy/?a=1')).toBe('https://example.com/privacy?a=1');
+    expect(normalizeUrl('https://example.com/')).toBe('https://example.com/');
+    expect(normalizeUrl('https://www.example.com/')).toBe('https://example.com/');
+    expect(normalizeUrl('https://example.com/a//')).toBe('https://example.com/a');
+    expect(normalizeUrl('https://www.example.com/manage/', { exclude: ['/manage/'] })).toBe('https://example.com/manage/');
+    expect(normalizeUrl('https://example.com/api/x/', { exclude: (p) => p.startsWith('/api/') })).toBe('https://example.com/api/x/');
+    expect(normalizeUrl('https://old.example.net/a/', { host: 'example.com', stripTrailingSlash: false })).toBe('https://example.com/a/');
+  });
+
+  it('canonicalRedirect は違えば 301、同じか GET・HEAD 以外は null', () => {
+    const res = canonicalRedirect(new Request('https://www.example.com/privacy/?a=1'));
+    expect(res?.status).toBe(301);
+    expect(res?.headers.get('location')).toBe('https://example.com/privacy?a=1');
+    expect(canonicalRedirect(new Request('https://example.com/privacy'))).toBeNull();
+    expect(canonicalRedirect(new Request('https://example.com/form/', { method: 'POST' }))).toBeNull();
+    expect(canonicalRedirect(new Request('https://example.com/a/'), { status: 308 })?.status).toBe(308);
   });
 });
 
