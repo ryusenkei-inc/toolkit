@@ -1,4 +1,4 @@
-import { ConfigError, err, ok, TransientError, type Result } from '../core/index.ts';
+import { ConfigError, err, ok, TransientError, type Result } from '@ryusenkei/core';
 
 /** キー（IP アドレスなど）ごとの回数の制限（`@ryusenkei/web/form/server` の `rateLimiter` に渡せる） */
 export type RateLimiter = Readonly<{ limit(key: string): Promise<Result<void, 'rate_limited'>> }>;

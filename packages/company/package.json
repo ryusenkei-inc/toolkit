@@ -33,7 +33,7 @@
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
-    "@ryusenkei/web": "workspace:^0.3.0",
+    "@ryusenkei/web": "workspace:^",
     "@types/node": "^26.6.1",
     "typescript": "^5.9.3"
   }

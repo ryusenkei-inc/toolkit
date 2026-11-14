@@ -1,11 +1,11 @@
-// 実行時のライブラリ（packages/web）の検査
+// 実行時のライブラリ（packages/core、packages/web）の検査
 // - 会社固有の値: ソースに入れない。使う側が渡す（会社の値は packages/company に置く）
 //   一覧に具体的な値を書くと公開のリポに載るので、形で検出する
 // - ビルドの生成物: ビルドの設定の誤りで src に出た .js・.d.ts
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 
-const SRC = 'packages/web/src';
+const SOURCES = ['packages/core/src', 'packages/web/src'];
 const PATTERNS: { name: string; re: RegExp }[] = [
   // Cloudflare のアカウント・ゾーンの ID など
   { name: '32桁の16進数の ID', re: /\b[0-9a-f]{32}\b/i },
@@ -18,7 +18,7 @@ const PATTERNS: { name: string; re: RegExp }[] = [
 const all = (dir: string): string[] => readdirSync(dir).flatMap((name) => (statSync(join(dir, name)).isDirectory() ? all(join(dir, name)) : [join(dir, name)]));
 const problems: string[] = [];
 
-for (const file of all(SRC)) {
+for (const file of SOURCES.flatMap(all)) {
   const path = file.replaceAll('\\', '/');
   if (/\.(js|d\.ts)$/.test(file)) problems.push(`${path}: src の中のビルドの生成物`);
   if (!/\.(ts|json|md)$/.test(file)) continue;

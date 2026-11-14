@@ -1,4 +1,4 @@
-import { ConfigError, TransientError } from '../core/index.ts';
+import { ConfigError, TransientError } from '@ryusenkei/core';
 
 /** 保存した実体。本文は1回だけ読める（ストリームのため）。`contentType` は保存のときの種類で、なければ `null` */
 export type StoredBlob = Readonly<{ body: ReadableStream<Uint8Array>; contentType: string | null; size: number }>;

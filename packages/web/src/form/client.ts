@@ -1,5 +1,5 @@
 // 画面から送信するための型と関数（フレームワークに依存しない。Astro でも Vite + React でも使える）
-import type { Problem } from '../core/index.ts';
+import type { Problem } from '@ryusenkei/core';
 
 /** 受け取りの処理が返すエラーコード（文言は画面側の辞書で引く） */
 export type SubmissionErrorCode = 'invalid' | 'too_large' | 'rate_limited' | 'bot_check_failed' | 'unavailable' | 'not_configured' | 'internal' | 'method_not_allowed';

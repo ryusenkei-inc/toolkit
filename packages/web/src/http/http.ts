@@ -1,6 +1,4 @@
-import { classifyFailure } from './errors.ts';
-import { log } from './log.ts';
-import { jsonLogReporter, reportSafely, type ErrorContext, type ErrorReporter } from './report.ts';
+import { classifyFailure, jsonLogReporter, log, reportSafely, type ErrorContext, type ErrorReporter } from '@ryusenkei/core';
 
 export const REQUEST_ID_HEADER = 'x-request-id';
 // 外から来た値を、ログや応答にそのまま書いても安全な形に限る

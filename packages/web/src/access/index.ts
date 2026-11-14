@@ -1,4 +1,4 @@
-import { ConfigError, err, ok, type Result } from '../core/index.ts';
+import { ConfigError, err, ok, type Result } from '@ryusenkei/core';
 import { jwtFromRequest, jwtVerifier, type JwtAlgorithm, type JwtClaims } from './jwt.ts';
 
 export { jwtFromRequest, jwtVerifier, type JwtAlgorithm, type JwtClaims, type JwtVerifier, type JwtVerifierOptions } from './jwt.ts';

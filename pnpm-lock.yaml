@@ -21,7 +21,7 @@ importers:
   packages/company:
     devDependencies:
       '@ryusenkei/web':
-        specifier: workspace:^0.3.0
+        specifier: workspace:^
         version: link:../web
       '@types/node':
         specifier: ^26.6.1
@@ -35,6 +35,15 @@ importers:
       '@ryusenkei/prose-lint':
         specifier: workspace:^0.2.0
         version: link:../prose-lint
+    devDependencies:
+      '@types/node':
+        specifier: ^26.6.1
+        version: 26.6.4
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+
+  packages/core:
     devDependencies:
       '@types/node':
         specifier: ^26.6.1
@@ -69,6 +78,10 @@ importers:
         version: 5.9.3
 
   packages/web:
+    dependencies:
+      '@ryusenkei/core':
+        specifier: workspace:^
+        version: link:../core
     devDependencies:
       typescript:
         specifier: ^5.9.3

@@ -1,5 +1,5 @@
 // 項目の宣言・整形・検査（フレームワークとホストに依存しない）
-import type { Problem } from '../core/index.ts';
+import type { Problem } from '@ryusenkei/core';
 import { isEmailAddress } from '../mail/index.ts';
 
 /** 項目の種類。長さは HTML の `maxlength` と同じ UTF-16 の単位で数える */

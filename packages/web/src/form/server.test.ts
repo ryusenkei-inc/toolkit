@@ -1,4 +1,4 @@
-import { ConfigError, TransientError } from '../core/index.ts';
+import { ConfigError, TransientError } from '@ryusenkei/core';
 import { memoryMailer } from '../mail/testing.ts';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { submitForm } from './client.ts';

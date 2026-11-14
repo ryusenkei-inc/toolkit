@@ -1,4 +1,4 @@
-import { err, ok, type Result } from '../core/index.ts';
+import { err, ok, type Result } from '@ryusenkei/core';
 
 export type MailAddress = { email: string; name?: string };
 

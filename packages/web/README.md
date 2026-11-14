@@ -1,16 +1,16 @@
 # @ryusenkei/web
 
-Runtime libraries for launching small web products on Cloudflare Workers or Vercel: typed errors and failure responses, contact and feedback forms with delivery by email or webhook, a privacy policy, a 特定商取引法 notice, and an advertising disclosure built from a declaration, and the Cloudflare, Turnstile, and Access integrations they need. Each area is a subpath export. There are no runtime dependencies, the server side is a standard `(Request) => Response`, and nothing renders UI.
+Runtime libraries for launching small web products on Cloudflare Workers or Vercel: HTTP failure responses, contact and feedback forms with delivery by email or webhook, a privacy policy, a 特定商取引法 notice, and an advertising disclosure built from a declaration, and the Cloudflare, Turnstile, and Access integrations they need. Each area is a subpath export. The only runtime dependency is [`@ryusenkei/core`](../core), for errors, `Result`, and logging. The server side is a standard `(Request) => Response`, and nothing renders UI.
 
 ## Install
 
 ```sh
-pnpm add @ryusenkei/web
+pnpm add @ryusenkei/core @ryusenkei/web
 ```
 
 | Import | Contents |
 | --- | --- |
-| `@ryusenkei/web` | `Result`, infrastructure errors and their classification, failure responses, error reporting, logging |
+| `@ryusenkei/web` | HTTP failure responses and the request ID |
 | `@ryusenkei/web/form` | Field declarations, sanitizing, validation |
 | `@ryusenkei/web/form/server` | The submission handler and its destinations (email, webhook) |
 | `@ryusenkei/web/form/client` | Submitting from the page |
@@ -18,52 +18,16 @@ pnpm add @ryusenkei/web
 | `@ryusenkei/web/legal` | Privacy policy, 特定商取引法 notice, advertising disclosure, operator details |
 | `@ryusenkei/web/mail` | The `Mail` shape, the `Mailer` interface, and the checks before sending |
 | `@ryusenkei/web/mail/testing` | An in-memory `Mailer` |
-| `@ryusenkei/web/cloudflare` | Workers bindings: Rate Limiting and Email Service |
+| `@ryusenkei/web/cloudflare` | Workers bindings: Rate Limiting, Email Service, and R2 |
 | `@ryusenkei/web/turnstile` | Turnstile's server-side check |
-| `@ryusenkei/web/access` | Cloudflare Access JWT verification |
+| `@ryusenkei/web/access` | Cloudflare Access authentication and OIDC JWT verification |
 
-This package replaces `@ryusenkei/web`, `form`, `legal`, `mail`, `adapter-cloudflare`, `adapter-turnstile`, and `adapter-access`.
+This package replaces `form`, `legal`, `mail`, `adapter-cloudflare`, `adapter-turnstile`, and `adapter-access`. Up to 0.5.x, `@ryusenkei/web` also contained what is now `@ryusenkei/core`; from 0.6.0, import errors, `Result`, and logging from `@ryusenkei/core`.
 
-## Errors, responses, and logging (`@ryusenkei/web`)
 
-The base of the other subpaths: a `Result` type for business failures, typed errors for infrastructure failures and their classification, HTTP failure responses with a request ID, an error-reporter hook, and structured logging. Nothing here is specific to Cloudflare Workers, Node, or Vercel.
+## HTTP failure responses (`@ryusenkei/web`)
 
-### Business failures: `Result` and `Problem`
-
-Return expected failures (not found, duplicate, invalid input) as values with a code, instead of throwing:
-
-```ts
-import { err, ok, type Result } from '@ryusenkei/web';
-
-function findUser(id: string): Result<User, 'not_found'> {
-  const user = users.get(id);
-  return user ? ok(user) : err('not_found');
-}
-```
-
-Input problems are `{ path, code, params? }`. They carry no text; the UI looks the code up in its own dictionary and fills in `params` (for example, a maximum length).
-
-### Infrastructure failures
-
-| Error | Meaning |
-| --- | --- |
-| `TransientError` | May succeed on retry. `retryAfterSec` is optional; negative or non-finite values are ignored |
-| `ConfigError` | A missing or wrong setting. `key` names it |
-
-`classifyFailure(e)` returns a kind, so queues and scheduled jobs can use it as well as HTTP handlers:
-
-| Thrown value | Kind | Retry after |
-| --- | --- | --- |
-| `ConfigError` | `config` | — |
-| `TransientError` | `transient` | its `retryAfterSec`, or 5 seconds |
-| Durable Object error with `overloaded: true` | `transient` | 10 seconds |
-| Durable Object error with `retryable: true` | `transient` | 5 seconds |
-| `TimeoutError` / `AbortError` (fetch timeouts and aborts) | `transient` | 5 seconds |
-| anything else | `unknown` | — |
-
-`asTransient(e, message)` wraps an unknown error as a `TransientError` with the original as `cause`, and returns typed errors unchanged.
-
-### HTTP
+Turns a thrown error into a JSON response with a request ID. Errors, `Result`, logging, and reporting come from [`@ryusenkei/core`](../core); install it alongside this package.
 
 ```ts
 import { failureResponse, withRequestId } from '@ryusenkei/web';
@@ -91,23 +55,11 @@ export default {
 - `withRequestId` keeps a well-formed incoming `x-request-id` and replaces a missing or malformed one with a UUID.
 - `failureOf(e)` gives `{ status, code }` without building a response.
 
-### Error reporting
+`failureResponse` options:
 
-`ErrorReporter` is `{ report(error, context) }`. The default `jsonLogReporter` writes an `error_report` log line. `combineReporters` sends to several reporters, and `reportSafely` swallows a reporter's own failure (logged as `error_report_failed`) so reporting never breaks a response.
-
-### Logging
-
-```ts
-import { log } from '@ryusenkei/web';
-
-log('warn', 'rate_limit_fallback', { key: 'ip' });
-// {"key":"ip","level":"warn","event":"rate_limit_fallback"}
-```
-
-- One JSON line per event. The event is a code, not a sentence.
-- `level` and `event` always win over fields with the same name.
-- `Error` values anywhere in the fields go through `serializeError`: the message is capped at 500 characters, the stack at 8 lines, one level of `cause` is kept, and the error's own fields (such as `key` or `retryAfterSec`) stay.
-- Don't put request bodies or email addresses in the fields.
+- `requestId`: a string, or `null` for work without one. It goes into the body, the `x-request-id` header, and the report.
+- `context`: fields for the log line and the report (`stage`, `method`, `path`, and any others such as a tenant ID).
+- `body`: builds the body from `{ failure, requestId, error }` when an API has its own error contract, for example `({ failure, requestId }) => ({ code: failure.code, requestId })`. The status and headers stay the same. The default body never carries the error message; with `body`, what goes in is up to you.
 
 ## Forms (`@ryusenkei/web/form`)
 
@@ -173,7 +125,7 @@ The order is validate, then rate limit, then bot check, then deliver. Validation
 | Rate limited | 429 | `rate_limited` |
 | Bot check rejected | 403 | `bot_check_failed` |
 | Every destination failed | 502 | `unavailable` |
-| Infrastructure failure (an outage, a missing setting) | 503 / 500 | from `@ryusenkei/web` `failureResponse` |
+| Infrastructure failure (an outage, a missing setting) | 503 / 500 | from `failureResponse` |
 
 How submissions are read and logged:
 
@@ -343,26 +295,35 @@ interface Mailer { send(mail: Mail): Promise<Result<{ id: string | undefined }, 
 
 ## Cloudflare Workers bindings (`@ryusenkei/web/cloudflare`)
 
-Cloudflare Workers bindings as the rate limiter and mail sender that `@ryusenkei/web/form` uses. The binding types are structural, so there is no dependency on `@cloudflare/workers-types`.
+Cloudflare Workers bindings: the rate limiter and mail sender that `@ryusenkei/web/form` uses, and file storage on R2. The binding types are structural, so there is no dependency on `@cloudflare/workers-types`.
 
 ### Usage
 
 ```ts
-import { cloudflareMailer, cloudflareRateLimiter } from '@ryusenkei/web/cloudflare';
+import { cloudflareMailer, cloudflareRateLimiter, r2BlobStore } from '@ryusenkei/web/cloudflare';
 
 const rateLimiter = cloudflareRateLimiter(env.FORM_LIMITER);
 const mailer = cloudflareMailer(env.EMAIL);
+const files = r2BlobStore(env.FILES);
 ```
 
 | Function | Returns | Binding |
 | --- | --- | --- |
 | `cloudflareRateLimiter` | `limit(key)` → `rate_limited` over the limit | Rate Limiting (`ratelimits` in wrangler config; limit and period are set there). Counts are per Cloudflare location, not a strict global limit |
 | `cloudflareMailer` | a `Mailer` from `@ryusenkei/web/mail` | Email Service (`send_email`). The sender domain must be onboarded to Email Sending |
+| `r2BlobStore` | a `BlobStore`: `put`, `get`, `exists`, `delete` | R2 (`r2_buckets`) |
+
+`BlobStore`:
+
+- `put(key, body, { contentType? })` stores a string, bytes, or a stream. R2 needs the length of a stream, so read a body of unknown length into an `ArrayBuffer` first.
+- `get(key)` gives `{ body, contentType, size }`, or `null` when the key is missing. `contentType` is `null` when none was stored. The body is a stream and can be read once.
+- `exists(key)` checks without reading the body.
+- `delete(key | keys)` takes one key or many, split into requests of 1,000 keys (R2's limit). Missing keys count as deleted.
 
 ### Errors
 
-- A missing binding throws `ConfigError`, so a misconfigured deploy answers 503 `not_configured`.
-- A Rate Limiting binding failure throws `TransientError`.
+- A missing binding throws `ConfigError`, so a misconfigured deploy answers 503 `not_configured`. `cloudflareRateLimiter(binding, { whenMissing: 'allow' })` lets every request through instead, for local development or deployments where the limit is optional.
+- A Rate Limiting or R2 binding failure throws `TransientError`.
 - The mailer runs `validateMail` first, then maps Email Service error codes:
 
 | Codes | Result |
@@ -408,7 +369,7 @@ turnstileBotCheck({ secret: TURNSTILE_TEST_KEYS.secret.pass, hostnames: ['localh
 
 ## Cloudflare Access (`@ryusenkei/web/access`)
 
-Authenticates requests behind Cloudflare Access, for example a product's admin pages. It verifies the Access JWT with Web Crypto, so it runs on Workers, Vercel, and Node without dependencies.
+Authenticates requests behind Cloudflare Access, for example a product's admin pages, and verifies JWTs from any OIDC provider. It uses Web Crypto, so it runs on Workers, Vercel, and Node.
 
 ### Usage
 
@@ -427,6 +388,8 @@ if (!user.ok) return new Response(null, { status: 401 });
   accessAuthenticator({ team: env.ACCESS_TEAM, aud: env.ACCESS_AUD?.split(',') });
   ```
 
+- `header`: where the token is read (default `cf-access-jwt-assertion`). An array is tried in order and the first header with a value is used. `authorization` takes the `Bearer <token>` form only.
+
 The result is an `Identity`:
 
 | `kind` | When | `subject` | `email` |
@@ -434,22 +397,38 @@ The result is an `Identity`:
 | `user` | A person signed in | the `sub` claim | lowercased |
 | `service` | An Access service token (machine to machine) | `service:<client id>` | `undefined` |
 
-`groups` is filled only when the JWT carries a `groups` claim.
+`groups` is filled only when the JWT carries a `groups` claim. `claims` has every verified claim, for anything the table doesn't cover.
 
 ### What is verified
 
-The token comes from the `Cf-Access-Jwt-Assertion` header. Anything else gives `unauthenticated`:
+The checks are those of `jwtVerifier` below, with `https://<team>.cloudflareaccess.com` as the issuer and its `/cdn-cgi/access/certs` as the key list. Anything else gives `unauthenticated`:
 
-- The signature is RS256 and matches a key from `https://<team>.cloudflareaccess.com/cdn-cgi/access/certs` with the same `kid`
+- The signature is RS256 or ES256 and matches a key with the same `kid`
 - `aud` contains one of the configured AUD tags, and `iss` is `https://<team>.cloudflareaccess.com`
 - `exp` has not passed and `nbf` has (60 seconds of clock skew allowed)
 - A user token has `sub` and an email, and `email_verified` is not `false`
 
+### Other OIDC providers
+
+`jwtVerifier` checks a JWT from any OIDC provider (ID tokens, access tokens) and returns its claims:
+
+```ts
+import { jwtFromRequest, jwtVerifier } from '@ryusenkei/web/access';
+
+const verifier = jwtVerifier({ issuer: 'https://login.example.com', audience: env.CLIENT_ID, jwksUrl: 'https://login.example.com/.well-known/jwks.json' });
+const claims = await verifier.verify(jwtFromRequest(request, 'authorization'));
+if (!claims.ok) return new Response(null, { status: 401 });
+```
+
+- `algorithms` limits the accepted signatures (default RS256 and ES256). A key whose type doesn't fit the algorithm, or whose JWK `alg` differs from the token's, is rejected.
+- `iss` must equal `issuer`, and `aud` must contain `audience` (or one of an array).
+- The JWKS URL is not discovered from the issuer; pass it.
+
 ### Keys and failures
 
 - The key list is cached for an hour. A token with an unknown `kid` refetches it, at most once every 30 seconds, since Access rotates keys every six weeks and junk tokens must not trigger a fetch each time.
-- Imported keys are cached per `kid`.
-- A missing `team` or `aud` (including an array with no non-empty tag) throws `ConfigError`.
+- Imported keys are cached per `kid` and algorithm.
+- A missing `team` or `aud` (including an array with no non-empty tag) throws `ConfigError`, as does a missing `issuer`, `audience`, or `jwksUrl` for `jwtVerifier`.
 - A key-list fetch that fails, times out (5 seconds by default, `timeoutMs`), or can't be read throws `TransientError`.
 
 ## Versioning

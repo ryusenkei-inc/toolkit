@@ -1,4 +1,4 @@
-import { ConfigError, err, ok, TransientError, type Result } from '../core/index.ts';
+import { ConfigError, err, ok, TransientError, type Result } from '@ryusenkei/core';
 
 /** 署名の形式 */
 export type JwtAlgorithm = 'RS256' | 'ES256';
