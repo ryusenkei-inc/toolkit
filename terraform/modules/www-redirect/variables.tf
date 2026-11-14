@@ -18,6 +18,11 @@ variable "trailing_slash_exclude" {
   type        = list(string)
   description = "末尾のスラッシュを外さないパスの接頭辞（例: `/manage/`。`strip_trailing_slash` のときだけ）"
   default     = []
+
+  validation {
+    condition     = alltrue([for p in var.trailing_slash_exclude : startswith(p, "/")])
+    error_message = "trailing_slash_exclude は / で始める"
+  }
 }
 
 variable "extra_rules" {
