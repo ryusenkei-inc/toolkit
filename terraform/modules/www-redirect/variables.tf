@@ -19,3 +19,21 @@ variable "trailing_slash_exclude" {
   description = "末尾のスラッシュを外さないパスの接頭辞（例: `/manage/`。`strip_trailing_slash` のときだけ）"
   default     = []
 }
+
+variable "extra_rules" {
+  description = "同じ ruleset に足す転送の規則（この phase の ruleset はゾーンに1つだけのため）。www と末尾のスラッシュの規則の後に並ぶ。転送先は target_expression（式）か target_url（固定の URL）"
+  type = list(object({
+    description           = string
+    expression            = string
+    target_expression     = optional(string)
+    target_url            = optional(string)
+    status_code           = optional(number, 301)
+    preserve_query_string = optional(bool, true)
+  }))
+  default = []
+
+  validation {
+    condition     = alltrue([for r in var.extra_rules : (r.target_expression == null) != (r.target_url == null)])
+    error_message = "extra_rules の各規則には target_expression か target_url のどちらか1つを書く"
+  }
+}

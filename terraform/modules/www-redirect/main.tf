@@ -48,5 +48,20 @@ resource "cloudflare_ruleset" "redirect" {
   name    = "${var.domain} の www の転送"
   kind    = "zone"
   phase   = "http_request_dynamic_redirect"
-  rules   = var.strip_trailing_slash ? [local.www_rule, local.slash_rule] : [local.www_rule]
+  rules = concat(
+    [local.www_rule],
+    var.strip_trailing_slash ? [local.slash_rule] : [],
+    [for r in var.extra_rules : {
+      description = r.description
+      expression  = r.expression
+      action      = "redirect"
+      action_parameters = {
+        from_value = {
+          status_code           = r.status_code
+          preserve_query_string = r.preserve_query_string
+          target_url            = r.target_expression != null ? { expression = r.target_expression, value = null } : { expression = null, value = r.target_url }
+        }
+      }
+    }],
+  )
 }

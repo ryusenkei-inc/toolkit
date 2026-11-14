@@ -22,7 +22,7 @@ Tags for the modules are `terraform-v<version>`. They don't contain `@`, so the 
 | `dns-records` | DNS records from a list. Each key is the type, name, and a hash of the content, so several records can share a name and type and reordering never recreates them. Changing a record's content recreates that record | `record_ids` |
 | `turnstile-widget` | A Turnstile widget for the listed hostnames (`managed` by default) | `sitekey`, `secret` (sensitive) |
 | `access-app` | An Access application that admits the listed emails with a one-time code, plus bypass applications for paths such as `/healthz` | `aud` (for `@ryusenkei/adapter-access`), `application_id` |
-| `www-redirect` | `www` → apex with a 301, keeping the path and query. With `strip_trailing_slash = true`, also `/path/` → `/path` with a 301 (`/` stays; `trailing_slash_exclude` lists path prefixes to leave alone), and `www` drops the slash in the same hop | — |
+| `www-redirect` | `www` → apex with a 301, keeping the path and query. With `strip_trailing_slash = true`, also `/path/` → `/path` with a 301 (`/` stays; `trailing_slash_exclude` lists path prefixes to leave alone), and `www` drops the slash in the same hop. `extra_rules` adds your own redirects to the same ruleset, since the phase allows one ruleset per zone. Without these arguments, the plan is the same as in `terraform-v0.1.0` | — |
 | `search-console-verification` | The `google-site-verification=...` TXT records for a Search Console Domain property (`tokens`, one per verifying account; the prefix is optional) | `record_ids` |
 
 ## How responsibilities are split
