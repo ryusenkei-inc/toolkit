@@ -35,6 +35,6 @@
   "devDependencies": {
     "@ryusenkei/web": "workspace:^",
     "@types/node": "^26.6.1",
-    "typescript": "^5.9.3"
+    "typescript": "^7.0.2"
   }
 }
