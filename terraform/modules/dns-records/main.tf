@@ -1,6 +1,6 @@
 resource "cloudflare_dns_record" "this" {
-  # キーは型・名前・内容のハッシュ。同じ名前と型の複数のレコードを持て、並べ替えても作り直さない
-  for_each = { for r in var.records : "${r.type}:${r.name}:${substr(sha1(r.content), 0, 8)}" => r }
+  # キーは `key`、なければ型・名前・内容のハッシュ。同じ名前と型の複数のレコードを持て、並べ替えても作り直さない
+  for_each = { for r in var.records : r.key != null ? r.key : "${r.type}:${r.name}:${substr(sha1(r.content), 0, 8)}" => r }
 
   zone_id  = var.zone_id
   name     = each.value.name

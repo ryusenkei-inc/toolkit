@@ -8,21 +8,21 @@ Reference a module by Git with a tag, so updates are deliberate:
 
 ```hcl
 module "turnstile" {
-  source     = "git::https://github.com/ryusenkei-inc/toolkit.git//terraform/modules/turnstile-widget?ref=terraform-v0.1.0"
+  source     = "git::https://github.com/ryusenkei-inc/toolkit.git//terraform/modules/turnstile-widget?ref=terraform-v0.3.0"
   account_id = var.account_id
   name       = "example contact"
   domains    = ["example.ryusenkei.co.jp"]
 }
 ```
 
-Tags for the modules are `terraform-v<version>`. They don't contain `@`, so the npm publish workflow ignores them.
+Tags for the modules are `terraform-v<version>`. They don't contain `@`, so the npm publish workflow ignores them. The [CHANGELOG](CHANGELOG.md) lists what each tag changed.
 
 | Module | Creates | Outputs |
 | --- | --- | --- |
-| `dns-records` | DNS records from a list. Each key is the type, name, and a hash of the content, so several records can share a name and type and reordering never recreates them. Changing a record's content recreates that record | `record_ids` |
+| `dns-records` | DNS records from a list. Each key is the record's `key`, or else the type, name, and a hash of the content, so several records can share a name and type and reordering never recreates them. Without `key`, changing a record's content recreates that record; give it a `key` to update it in place (move an existing record to its new key with a `moved` block) | `record_ids` |
 | `turnstile-widget` | A Turnstile widget for the listed hostnames (`managed` by default) | `sitekey`, `secret` (sensitive) |
-| `access-app` | An Access application that admits the listed emails with a one-time code, plus bypass applications for paths such as `/healthz` | `aud` (for `@ryusenkei/adapter-access`), `application_id` |
-| `www-redirect` | `www` → apex with a 301, keeping the path and query. With `strip_trailing_slash = true`, also `/path/` → `/path` with a 301 (`/` stays; `trailing_slash_exclude` lists path prefixes to leave alone), and `www` drops the slash in the same hop. `extra_rules` adds your own redirects to the same ruleset, since the phase allows one ruleset per zone. `ruleset_name` keeps the name of a ruleset you import (the default is `<domain> の www の転送`), so it is not replaced. Without these arguments, the plan is the same as in `terraform-v0.1.0` | — |
+| `access-app` | An Access application that admits the listed emails with a one-time code, plus bypass applications for paths such as `/healthz` | `aud` (for `accessAuthenticator` in `@ryusenkei/web/access`), `application_id` |
+| `www-redirect` | `www` → apex with a 301, keeping the path and query. With `strip_trailing_slash = true`, also `/path/` → `/path` with a 301 (`/` stays; `trailing_slash_exclude` lists path prefixes, each starting with `/`, to leave alone), and `www` drops the slash in the same hop. `extra_rules` adds your own redirects to the same ruleset, since the phase allows one ruleset per zone. `ruleset_name` keeps the name of a ruleset you import (the default is `<domain> の www の転送`), so it is not replaced. Without these arguments, the plan is the same as in `terraform-v0.1.0` | `ruleset_id` |
 | `search-console-verification` | The `google-site-verification=...` TXT records for a Search Console Domain property (`tokens`, one per verifying account; the prefix is optional) | `record_ids` |
 
 ## How responsibilities are split
