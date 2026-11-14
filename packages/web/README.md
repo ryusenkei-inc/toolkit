@@ -1,6 +1,6 @@
 # @ryusenkei/web
 
-Runtime libraries for launching small web products on Cloudflare Workers or Vercel: HTTP failure responses, contact and feedback forms with delivery by email or webhook, webhook signing and verification, event analytics, a privacy policy, a 特定商取引法 notice, and an advertising disclosure built from a declaration, and the Cloudflare, Turnstile, and Access integrations they need. Each area is a subpath export. The only runtime dependency is [`@ryusenkei/core`](../core), for errors, `Result`, and logging. The server side is a standard `(Request) => Response`, and nothing renders UI.
+Runtime libraries for launching small web products on Cloudflare Workers or Vercel: HTTP failure responses, contact and feedback forms with delivery by email or webhook, webhook signing and verification, event analytics, meta tags and JSON-LD and sitemaps for SEO, a privacy policy, a 特定商取引法 notice, and an advertising disclosure built from a declaration, and the Cloudflare, Turnstile, and Access integrations they need. Each area is a subpath export. The only runtime dependency is [`@ryusenkei/core`](../core), for errors, `Result`, and logging. The server side is a standard `(Request) => Response`, and nothing renders UI.
 
 ## Install
 
@@ -21,6 +21,7 @@ pnpm add @ryusenkei/core @ryusenkei/web
 | `@ryusenkei/web/webhook` | Signing and verifying webhooks and app-to-app requests (HMAC-SHA256) |
 | `@ryusenkei/web/analytics` | Event recording and count ports, cookieless visitor keys, an in-memory store |
 | `@ryusenkei/web/analytics/client` | Sending events from the page with `sendBeacon` |
+| `@ryusenkei/web/seo` | Canonical URLs, meta tags, JSON-LD, sitemaps, `robots.txt` |
 | `@ryusenkei/web/cloudflare` | Workers bindings: Rate Limiting, Email Service, R2, and Analytics Engine |
 | `@ryusenkei/web/turnstile` | Turnstile's server-side check |
 | `@ryusenkei/web/access` | Cloudflare Access authentication and OIDC JWT verification |
@@ -400,6 +401,7 @@ const rows = await counts.count({ from: '2026-11-01', to: '2026-11-14', timeZone
 
 - `EventRecorder` is `{ record(event) }`. It doesn't wait and never throws into the request.
 - `EventCounts` is `{ count(query) }`. Rows come per day (in `timeZone`) and per `groupBy` field, sorted. `where` takes a value or a list of values per field. `distinct` counts the distinct values of a field; with visitor keys, that is the deduplicated count.
+- `index` is the sampling key (`index1` in Analytics Engine). Give a field name (`index: 'subject'`) to record that field of the event there and use it in `groupBy`, `where`, and `distinct`; a function computes the value and can't be queried.
 - `memoryAnalytics(schema)` is both ports in memory, for tests and local development. It keeps what was recorded in `events`.
 - `dayIn(timeZone, at?)` gives the `YYYY-MM-DD` date in a time zone.
 - `isBotUserAgent(ua)` matches bots, crawlers, link previews, monitors, and headless browsers.
@@ -416,6 +418,59 @@ const rows = await counts.count({ from: '2026-11-01', to: '2026-11-14', timeZone
 ### Send from the page (`@ryusenkei/web/analytics/client`)
 
 `sendEvent(url, event)` posts the event as JSON with `navigator.sendBeacon` (it survives navigation), falling back to a `keepalive` fetch. The body is `text/plain`, so there is no CORS preflight; parse it as JSON on the server and check it before recording. It sends nothing from automated browsers (`navigator.webdriver`) or on the server, and ignores failures.
+
+## SEO (`@ryusenkei/web/seo`)
+
+The values search engines read: canonical URLs, meta tags, JSON-LD, sitemaps, and `robots.txt`. It returns data and strings (HTML, XML, text); putting them into the page head is your framework's job, and the site name and organization come from you.
+
+```ts
+import { breadcrumbJsonLd, canonicalUrl, jsonLdScript, metaTagsHtml, robotsTxt, sitemapXml } from '@ryusenkei/web/seo';
+
+const origin = 'https://example.com';
+const head = [
+  metaTagsHtml({ title: 'Post | Example', ogTitle: 'Post', description, canonical: canonicalUrl(origin, url.pathname), siteName: 'Example', locale: 'ja_JP', image }),
+  jsonLdScript(breadcrumbJsonLd([{ name: 'Top', url: `${origin}/` }, { name: 'Post' }])),
+].join('\n');
+
+// pages/sitemap.xml and pages/robots.txt
+new Response(sitemapXml([{ loc: '/' }, { loc: '/post', lastmod: '2026-11-14' }], { origin }), { headers: { 'content-type': 'application/xml; charset=utf-8' } });
+new Response(robotsTxt({ sitemaps: [`${origin}/sitemap.xml`] }), { headers: { 'content-type': 'text/plain; charset=utf-8' } });
+```
+
+| Function | Returns |
+| --- | --- |
+| `canonicalPath(pathname)` | The path without query, fragment, `.html`, a trailing `/index`, or a trailing slash. The top is `/` |
+| `canonicalUrl(origin, pathname, { trailingSlash? })`, `absoluteUrl(origin, path, ...)` | An absolute URL. The top is `https://example.com/`, or `https://example.com` with `trailingSlash: false` |
+| `normalizeUrl(url, options)` | The URL without `www.` and without a trailing slash, keeping the query (`/` stays) |
+| `canonicalRedirect(request, options)` | A 301 to `normalizeUrl` when the URL differs, otherwise `null`. Only for GET and HEAD |
+| `metaTags(input)` | `HeadTag[]` (`{ tag: 'title', text }` or `{ tag: 'meta' \| 'link', attrs }`) for your framework's head component |
+| `metaTagsHtml(input)`, `headHtml(tags)` | The same as escaped HTML, one element per line |
+| `jsonLdText(data)`, `jsonLdScript(data)` | JSON for a `<script type="application/ld+json">` with `<` escaped, or the whole element |
+| `organizationJsonLd`, `websiteJsonLd`, `breadcrumbJsonLd`, `articleJsonLd`, `itemListJsonLd` | schema.org nodes. Undefined fields are left out. Other types are plain objects of type `JsonLd` |
+| `jsonLdGraph(nodes)` | One `@graph` from several nodes |
+| `sitemapXml(entries, { origin? })`, `sitemapIndexXml(sitemaps)` | A sitemap (duplicates removed, at most 50,000 URLs) or a sitemap index |
+| `robotsTxt({ rules?, sitemaps? })` | `robots.txt`. The default rule allows everything |
+
+URL normalization (`www`-less, no trailing slash) as the first step of a handler:
+
+```ts
+export default {
+  fetch: (request: Request) => canonicalRedirect(request, { exclude: ['/api/'] }) ?? handle(request),
+};
+```
+
+- `exclude`: path prefixes (or a function) that keep their trailing slash, such as API routes or an app mounted at `/manage/`. The host is still normalized.
+- `host`: the canonical host, to send every other host there. Leave it out in development, or `localhost` is sent to production. By default only a leading `www.` is removed.
+- `stripTrailingSlash: false` keeps trailing slashes; `status: 308` keeps the method.
+- To do this at the edge instead, use `strip_trailing_slash` of the Terraform module `www-redirect`.
+
+`metaTags` input:
+
+- `noindex: true` sets `robots` to `noindex` and drops the canonical link and `og:url`.
+- `og:title` defaults to `title`, `og:type` to `website`. `twitter:card` defaults to `summary_large_image` when there is an image.
+- `publishedTime` and `modifiedTime` become `article:published_time` and `article:modified_time`.
+
+Keep pages out of search results with the `robots` meta tag, not `Disallow` in `robots.txt`: a crawler that can't fetch the page never sees the tag.
 
 ## Cloudflare Workers bindings (`@ryusenkei/web/cloudflare`)
 
@@ -436,7 +491,7 @@ const files = r2BlobStore(env.FILES);
 | `cloudflareRateLimiter` | `limit(key)` → `rate_limited` over the limit | Rate Limiting (`ratelimits` in wrangler config; limit and period are set there). Counts are per Cloudflare location, not a strict global limit |
 | `cloudflareMailer` | a `Mailer` from `@ryusenkei/web/mail` | Email Service (`send_email`). The sender domain must be onboarded to Email Sending |
 | `r2BlobStore` | a `BlobStore`: `put`, `get`, `exists`, `delete` | R2 (`r2_buckets`) |
-| `analyticsEngineRecorder(binding, schema)` | an `EventRecorder` | Analytics Engine (`analytics_engine_datasets`). Fields go to `blob1`… and `double1`… in schema order, `index` to `index1` |
+| `analyticsEngineRecorder(binding, schema)` | an `EventRecorder` | Analytics Engine (`analytics_engine_datasets`). Fields go to `blob1`… and `double1`… in schema order, `index` to `index1` (queried as `index1` when it is a field name) |
 | `analyticsEngineCounts({ accountId, token, dataset, schema })` | an `EventCounts` | None: the SQL API over HTTP, with an API token that can read Account Analytics |
 
 `BlobStore`:

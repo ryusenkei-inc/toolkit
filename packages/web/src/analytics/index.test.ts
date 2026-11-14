@@ -66,6 +66,21 @@ describe('memoryAnalytics', () => {
     ]);
     expect(await store.count({ from: '2026-11-14', to: '2026-11-14', timeZone: 'Asia/Tokyo', where: { event: ['view', 'copy'] } })).toEqual([{ day: '2026-11-14', keys: {}, count: 4 }]);
   });
+
+  it('名前で書いた index の項目で分け、絞り込む', async () => {
+    const store = memoryAnalytics(defineEventSchema({ blobs: ['event'], index: 'subject' }), { now: () => new Date('2026-11-14T03:00:00Z') });
+    store.record({ event: 'click', subject: '4901234567894' });
+    store.record({ event: 'click', subject: '4901234567894' });
+    store.record({ event: 'click', subject: '4512345678907' });
+    store.record({ event: 'view', subject: '4512345678907' });
+    const day = { from: '2026-11-14', to: '2026-11-14', timeZone: 'UTC' };
+    expect(await store.count({ ...day, groupBy: ['subject'], where: { event: 'click' } })).toEqual([
+      { day: '2026-11-14', keys: { subject: '4512345678907' }, count: 1 },
+      { day: '2026-11-14', keys: { subject: '4901234567894' }, count: 2 },
+    ]);
+    expect(await store.count({ ...day, where: { subject: '4512345678907' }, distinct: 'event' })).toEqual([{ day: '2026-11-14', keys: {}, count: 2, distinct: 2 }]);
+    expect(await store.count({ ...day, distinct: 'subject' })).toEqual([{ day: '2026-11-14', keys: {}, count: 4, distinct: 2 }]);
+  });
 });
 
 describe('sendEvent', () => {
