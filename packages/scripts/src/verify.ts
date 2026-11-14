@@ -4,7 +4,7 @@
 /** 1つの URL の期待 */
 export type UrlCheck = Readonly<{
   url: string;
-  /** 期待の状態のコード（既定は200、`location` があれば 301・302・307・308 のどれか） */
+  /** 期待の状態のコード。既定は200で、`location` を指定すると転送の状態（301、302、307、308）のどれか */
   status?: number | readonly number[];
   /** 本文に含むべき文字 */
   includes?: readonly string[];

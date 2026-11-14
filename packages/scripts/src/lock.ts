@@ -17,7 +17,7 @@ export type LockStore = Readonly<{
   name: string;
   /** 保存済みのロック。なければ `null` */
   read(): Promise<StoredLock | null>;
-  /** 書く。`ifVersion` が `null` ならないときだけ、あればその版のときだけ。条件が合わなければ `null`、書けたら新しい版 */
+  /** 書く。`ifVersion` が `null` ならないときだけ、あればその版のときだけ。条件が合わなければ `null`、書けたら書いた後の版 */
   write(content: string, ifVersion: string | null): Promise<string | null>;
   /** 消す（ないときは何もしない） */
   remove(): Promise<void>;

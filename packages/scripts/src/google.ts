@@ -98,7 +98,8 @@ const VERIFY = 'https://www.googleapis.com/siteVerification/v1';
 const WEBMASTERS = 'https://www.googleapis.com/webmasters/v3';
 
 /**
- * ドメインの所有権の確認の TXT の値（`google-site-verification=...`）。DNS に入れるのは Terraform のモジュール `search-console-verification`
+ * ドメインの所有権の確認の TXT の値（`google-site-verification=...`）
+ * - DNS に入れるのは Terraform のモジュール `search-console-verification`
  * - 値はトークンの持ち主（サービスアカウントか人）ごとに違う
  */
 export async function siteVerificationToken(domain: string, options: ApiOptions): Promise<string> {
