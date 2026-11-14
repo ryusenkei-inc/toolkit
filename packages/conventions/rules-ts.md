@@ -2,8 +2,8 @@
 
 - エントリポイントはパッケージごとの `src/index.ts`
 - TypeScript はビルドせず、Node で直接実行する（`node scripts/x.ts`）
-- テストは Vitest で書き、対象と同じディレクトリに `*.test.ts` を置く
-- 子プロセスは `@ryusenkei/scripts` の `exec` で起動する。Windows の `.cmd` に対応するため
+- テストは Vitest で書き、対象と同じディレクトリに `*.test.ts` を置く。ルートの vitest.config の `test.exclude` は `[...configDefaults.exclude, ...TEST_EXCLUDE]`（`@ryusenkei/conventions`）
+- 子プロセスは `@ryusenkei/scripts` の `execSync` などで起動する。Windows の `.cmd` に対応するため
 - 層の依存の向きは `scripts/lib/deps-rules.ts` に規則を書き、`@ryusenkei/conventions` の `runDepsCheck` で検査する（`pnpm lint` に含める）
 
 ## 定数

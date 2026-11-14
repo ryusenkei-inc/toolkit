@@ -24,7 +24,8 @@
   "files": [
     "dist",
     "files",
-    "rules*.md"
+    "rules*.md",
+    "CHANGELOG.md"
   ],
   "engines": {
     "node": ">=24"
