@@ -26,7 +26,8 @@ export type WebhookMessage = string | Uint8Array | readonly (string | Uint8Array
  * 署名の形式（使う側の値）
  * - `message`: 署名する内容。時刻を使わない形式は `timestamp` を無視する
  * - `encoding`: 署名の符号化（既定は `base64url`）
- * - `header`: `timestamped`（既定）は `t=<秒>,v1=<署名>`（鍵ごとに `v1` を並べる）。`plain` は署名だけで、前に `prefix` を付ける。`plain` は時刻を照合せず、署名には最初の鍵だけを使う
+ * - `header`: `timestamped`（既定）は `t=<秒>,v1=<署名>`（鍵ごとに `v1` を並べる）
+ * - `plain` は署名だけで、前に `prefix` を付ける。時刻を照合せず、署名には最初の鍵だけを使う
  */
 export type WebhookScheme = Readonly<{
   message(input: WebhookMessageInput): WebhookMessage | Promise<WebhookMessage>;

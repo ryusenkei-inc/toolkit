@@ -77,7 +77,7 @@ const literal = (value: string) => {
  * - 件数は `SUM(_sample_interval)` で標本を補正した値。`distinct` は値の種類の数で、標本を取ったときは少なめになる
  * - 日の区切りは条件の `timeZone`。書き込みから数秒〜数十秒で読める
  * - 行は1万行ずつ読み、20万行を超えたら例外（途中までの値で集計を上書きしないため）
- * - 429 と 5xx は `TransientError`。SQL に入れる値は引用符と逆斜線と制御文字を拒む
+ * - 状態が429と 5xx の応答は `TransientError`。SQL に入れる値は引用符と逆斜線と制御文字を拒む
  */
 export function analyticsEngineCounts<B extends string, D extends string>(options: AnalyticsEngineCountsOptions<B, D>): EventCounts<B> {
   if (!DATASET.test(options.dataset)) throw new ConfigError('Analytics Engine のデータセットの名前が不正', { key: 'dataset' });
