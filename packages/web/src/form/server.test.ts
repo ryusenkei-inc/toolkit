@@ -3,8 +3,9 @@ import { memoryMailer } from '../mail/testing.ts';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { submitForm } from './client.ts';
 import { defineForm } from './index.ts';
-import { httpDestination, mailDestination, notificationText, signWebhook, submissionHandler, webhookDestination, type Destination, type Submission } from './server.ts';
+import { httpDestination, mailDestination, notificationText, submissionHandler, webhookDestination, type Destination, type Submission } from './server.ts';
 import { fakeBotCheck, fakeRateLimiter, memoryDestination } from './testing.ts';
+import { verifyWebhook } from '../webhook/index.ts';
 
 afterEach(() => vi.restoreAllMocks());
 const quiet = () => {
@@ -160,8 +161,7 @@ describe('届け先', () => {
     const { init } = sent[0]!;
     expect(init.redirect).toBe('manual');
     const header = (init.headers as Record<string, string>)['x-signature']!;
-    const t = Number(header.match(/^t=(\d+),/)![1]);
-    expect(header).toBe(await signWebhook('s3cret', { method: 'POST', url: 'https://hooks.example.com/in?x=1', body: String(init.body) }, t * 1000));
+    expect(await verifyWebhook('s3cret', header, { method: 'POST', url: 'https://hooks.example.com/in?x=1', body: String(init.body) })).toEqual({ ok: true, value: undefined });
     expect(JSON.parse(String(init.body))).toMatchObject({ event: 'form.submitted', form: 'inquiry' });
   });
 
@@ -222,13 +222,6 @@ describe('webhookDestination の選択肢', () => {
     expect(sent!.headers['x-cms-signature']).toMatch(/^t=\d+,v1=[\w-]+,v1=[\w-]+$/);
     expect(sent!.headers['x-signature']).toBeUndefined();
     expect(JSON.parse(sent!.body)).toMatchObject({ event: 'form.submitted', id: expect.stringMatching(/^[0-9a-f-]{36}$/), form: 'inquiry' });
-  });
-
-  it('鍵の配列の v1 は、鍵1つの署名と同じ値', async () => {
-    const request = { method: 'POST', url: 'https://hooks.example.com/in', body: '{}' };
-    const both = await signWebhook(['a', 'b'], request, 1_800_000_000_000);
-    const [a, b] = [await signWebhook('a', request, 1_800_000_000_000), await signWebhook('b', request, 1_800_000_000_000)];
-    expect(both).toBe(`${a},${b.split(',')[1]}`);
   });
 
   it('heading は通知の本文の先頭', () => {

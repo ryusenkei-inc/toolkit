@@ -3,6 +3,7 @@
 import { classifyFailure, ConfigError, log, type ErrorReporter, type Result } from '@ryusenkei/core';
 import { failureResponse, withRequestId } from '../http/index.ts';
 import type { MailAddress, Mailer } from '../mail/index.ts';
+import { signWebhook, type WebhookScheme, type WebhookSecrets } from '../webhook/index.ts';
 import { parseForm, type Form, type FormValues } from './index.ts';
 
 /** bot の判定（`@ryusenkei/web/turnstile` の `turnstileBotCheck` が満たす） */
@@ -196,13 +197,14 @@ export type WebhookDestinationOptions = {
   /** 届け先の名前（既定は `webhook`。複数の webhook を送り分けるときに付ける） */
   name?: string;
   /**
-   * 署名の鍵。ヘッダー `x-signature: t=<秒>,v1=<署名>`
-   * - 署名は HMAC-SHA256 で、対象は `v1`・時刻・メソッド・パスとクエリ・空の主体・本文の SHA-256（base64url）を改行でつないだもの
+   * 署名の鍵（`@ryusenkei/web/webhook` の `signWebhook`）。既定の形式はヘッダー `x-signature: t=<秒>,v1=<署名>`
    * - 配列は鍵の入れ替えの間に使い、鍵ごとの `v1` を並べる（新しい鍵を先に）
    */
-  secret?: string | readonly string[];
+  secret?: WebhookSecrets;
   /** 署名のヘッダーの名前（既定は `x-signature`） */
   signatureHeader?: string;
+  /** 署名の形式（既定は `requestScheme`） */
+  signatureScheme?: WebhookScheme;
   /** 本文の形（`json` は値をそのまま、`slack` は通知の本文の `text`） */
   format?: 'json' | 'slack';
   /** `slack` のときの本文の文言 */
@@ -212,23 +214,6 @@ export type WebhookDestinationOptions = {
 };
 
 const DEFAULT_WEBHOOK_TIMEOUT_MS = 3000;
-const enc = new TextEncoder();
-const base64Url = (bytes: ArrayBuffer) => btoa(String.fromCharCode(...new Uint8Array(bytes))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-
-/** webhook の署名のヘッダーの値（受け手は同じ手順で照合する）。鍵の配列は鍵ごとの `v1` を並べる */
-export async function signWebhook(secret: string | readonly string[], request: { method: string; url: string; body: string }, nowMs = Date.now()): Promise<string> {
-  const t = Math.floor(nowMs / 1000);
-  const { pathname, search } = new URL(request.url);
-  const digest = base64Url(await crypto.subtle.digest('SHA-256', enc.encode(request.body)));
-  const message = enc.encode(['v1', t, request.method.toUpperCase(), `${pathname}${search}`, '', digest].join('\n'));
-  const sigs = await Promise.all(
-    (typeof secret === 'string' ? [secret] : secret).map(async (s) => {
-      const key = await crypto.subtle.importKey('raw', enc.encode(s), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
-      return `v1=${base64Url(await crypto.subtle.sign('HMAC', key, message))}`;
-    }),
-  );
-  return [`t=${t}`, ...sigs].join(',');
-}
 
 /**
  * webhook で届ける（2xx を成功とする）
@@ -245,7 +230,7 @@ export function webhookDestination(options: WebhookDestinationOptions): Destinat
       const payload = options.format === 'slack' ? { text: notificationText(submission, options.copy ?? { labels: {} }) } : { event: 'form.submitted', id: crypto.randomUUID(), ...submission };
       const body = JSON.stringify(payload);
       const headers: Record<string, string> = { 'content-type': 'application/json' };
-      if (secrets.length) headers[options.signatureHeader ?? 'x-signature'] = await signWebhook(secrets, { method: 'POST', url: options.url, body });
+      if (secrets.length) headers[options.signatureHeader ?? 'x-signature'] = await signWebhook(secrets, { method: 'POST', url: options.url, body }, { ...(options.signatureScheme && { scheme: options.signatureScheme }) });
       const res = await fetcher(options.url, { method: 'POST', headers, body, redirect: 'manual', signal: AbortSignal.timeout(options.timeoutMs ?? DEFAULT_WEBHOOK_TIMEOUT_MS) });
       return res.ok ? { ok: true, value: res.status } : { ok: false, error: `status_${res.status}` };
     },
