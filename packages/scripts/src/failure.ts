@@ -3,7 +3,7 @@ import { ConfigError, TransientError, UsageError } from '@ryusenkei/core';
 
 /**
  * 成功でない応答の例外
- * - 401・403 は `ConfigError`（認証、権限）、408・429・5xx は `TransientError`、ほかは `UsageError`（`code`）
+ * - 認証と権限（401、403）は `ConfigError`、一時的な状態（408、429、5xx）は `TransientError`、ほかは `UsageError`（`code`）
  * - 文には状態と、本文の先頭（300字まで）を入れる
  */
 export async function httpFailure(res: Response, code: string, what: string): Promise<Error> {
