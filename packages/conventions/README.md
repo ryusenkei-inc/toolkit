@@ -167,6 +167,29 @@ jobs:
         pnpm lint:deps
 ```
 
+Go, with releases on `v*` tags:
+
+```yaml
+# in .github/workflows/ci.yaml, next to the ci job
+  go:
+    uses: ryusenkei-inc/toolkit/.github/workflows/reusable-go.yaml@main
+```
+
+```yaml
+# .github/workflows/release.yaml
+name: Release
+on:
+  push:
+    tags: ['v*']
+permissions:
+  contents: write
+jobs:
+  release:
+    uses: ryusenkei-inc/toolkit/.github/workflows/reusable-go-release.yaml@main
+    with:
+      checks: test "v$(node -p "require('./package.json').version")" = "$GITHUB_REF_NAME"
+```
+
 ```yaml
 # .github/workflows/pr-title.yaml
 name: PR title
@@ -188,9 +211,12 @@ jobs:
 | --- | --- |
 | `reusable-ci.yaml` | Checkout (full history), mise, pnpm, `pnpm install --frozen-lockfile`, `pnpm typecheck`, `pnpm test`, `pnpm lint:prose`, the `checks` input, the PR title with prose-lint's commit rules (not for Dependabot), and a gitleaks scan with `.gitleaks.toml` |
 | `reusable-pr-title.yaml` | Re-checks the PR title when it is edited, with the `@ryusenkei/prose-lint` version from `package.json` and no install |
+| `reusable-go.yaml` | `go vet` and `go test` on each OS in `os` (Ubuntu, macOS, Windows by default), then `go build` for each `GOOS/GOARCH` in `targets` on Ubuntu. The Go version comes from `go.mod` |
+| `reusable-go-release.yaml` | For a `v*` tag: `go test`, the `checks` input, then GoReleaser with the caller's `.goreleaser.yaml`. The caller grants `contents: write` |
 
 - `terraform`: space-separated directories to check with `terraform fmt -check` and `validate` (no backend, so no credentials). Terraform comes from the caller's `mise.toml`.
-- Language jobs (Go, Rust) stay in the calling workflow as extra jobs.
+- Go uses `reusable-go.yaml` as a second job next to `ci`; on a private repository, set `os: '["ubuntu-latest"]'`, since macOS and Windows minutes count several times. Rust jobs stay in the calling workflow.
+- npm license checks: add `pnpm exec ryusenkei-licenses` from `@ryusenkei/scripts` to `checks` (see its README).
 - PR title edits run in their own workflow. In the same workflow, the later `edited` run would overwrite the `ci` job's result with "skipped" and hide a failure.
 - `@main` follows toolkit's `main`, so fixes reach every repository at once. A breaking change gets a new file name instead of changing these.
 

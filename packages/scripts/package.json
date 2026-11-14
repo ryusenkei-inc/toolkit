@@ -1,7 +1,7 @@
 {
   "name": "@ryusenkei/scripts",
   "version": "0.2.1",
-  "description": "RYUSENKEI のリポの共通のスクリプト（子プロセスの実行、.env の配信、GitHub のリポの設定）",
+  "description": "RYUSENKEI のリポの共通のスクリプト（子プロセスの実行、.env の配信、GitHub のリポの設定、デプロイのロックと確認、Search Console、ライセンスの検査）",
   "license": "MIT",
   "author": "RYUSENKEI",
   "repository": {
@@ -19,7 +19,9 @@
     }
   },
   "bin": {
-    "ryusenkei-repo-settings": "dist/repo-settings.js"
+    "ryusenkei-repo-settings": "dist/repo-settings.js",
+    "ryusenkei-licenses": "dist/licenses-cli.js",
+    "ryusenkei-search-console": "dist/search-console-cli.js"
   },
   "files": [
     "dist"
