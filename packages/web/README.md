@@ -465,6 +465,8 @@ if (!claims.ok) return new Response(null, { status: 401 });
 
 While the version is 0.x, a minor bump may break the API.
 
+0.6.0 was never published (its publish build failed); 0.6.1 is the first 0.6 release, with the same contents.
+
 ## License
 
 MIT
