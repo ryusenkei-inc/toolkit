@@ -1,7 +1,7 @@
 {
   "name": "@ryusenkei/core",
   "version": "0.3.0",
-  "description": "実行環境に依らない基盤（Result、基盤の失敗の分類、構造化ログ、エラーの報告）。Workers、Node、Vercel、CLI で使う",
+  "description": "実行環境に依らない基盤（Result、基盤の失敗の分類、構造化ログ、エラーの報告、トレース）。Workers、Node、Vercel、CLI で使う",
   "license": "MIT",
   "author": "RYUSENKEI",
   "repository": {
@@ -21,6 +21,10 @@
     "./context": {
       "types": "./dist/context/index.d.ts",
       "default": "./dist/context/index.js"
+    },
+    "./trace": {
+      "types": "./dist/trace/index.d.ts",
+      "default": "./dist/trace/index.js"
     }
   },
   "files": [

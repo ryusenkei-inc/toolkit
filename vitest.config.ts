@@ -9,6 +9,7 @@ export default defineConfig({
     alias: [
       { find: /^@ryusenkei\/core$/, replacement: core('index.ts') },
       { find: /^@ryusenkei\/core\/context$/, replacement: core('context/index.ts') },
+      { find: /^@ryusenkei\/core\/trace$/, replacement: core('trace/index.ts') },
     ],
   },
 });

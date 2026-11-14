@@ -1,7 +1,7 @@
 {
   "name": "@ryusenkei/web",
   "version": "0.6.1",
-  "description": "Web の製品の実行時のライブラリ（HTTP の失敗の応答、フォーム、法務の本文、メール、Cloudflare・Turnstile・Access の実装）",
+  "description": "Web の製品の実行時のライブラリ（HTTP の失敗の応答、フォーム、法務の本文、メール、Webhook の署名、計測、Cloudflare・Turnstile・Access の実装）",
   "license": "MIT",
   "author": "RYUSENKEI",
   "repository": {
@@ -45,6 +45,18 @@
     "./mail/testing": {
       "types": "./dist/mail/testing.d.ts",
       "default": "./dist/mail/testing.js"
+    },
+    "./webhook": {
+      "types": "./dist/webhook/index.d.ts",
+      "default": "./dist/webhook/index.js"
+    },
+    "./analytics": {
+      "types": "./dist/analytics/index.d.ts",
+      "default": "./dist/analytics/index.js"
+    },
+    "./analytics/client": {
+      "types": "./dist/analytics/client.d.ts",
+      "default": "./dist/analytics/client.js"
     },
     "./cloudflare": {
       "types": "./dist/cloudflare/index.d.ts",
