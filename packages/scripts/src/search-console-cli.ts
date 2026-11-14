@@ -5,14 +5,17 @@
 //   ryusenkei-search-console submit <サイト> <sitemap の URL>  sitemap を送る（サイトは sc-domain:example.com か URL）
 //   ryusenkei-search-console sitemaps <サイト>            送った sitemap の状態
 // - 認証: GOOGLE_APPLICATION_CREDENTIALS（サービスアカウントの鍵のファイル）、なければ gcloud のログイン（ADC）
+// - 終了の状態: 成功は0、API の失敗は1、使い方の誤りは2（`--help` は0）
 import { addSite, domainProperty, GOOGLE_SCOPES, googleAccessToken, listSitemaps, siteVerificationToken, submitSitemap, verifyDomain } from './google.ts';
 
 const [command, a, b] = process.argv.slice(2);
 const options = { accessToken: googleAccessToken([GOOGLE_SCOPES.webmasters, GOOGLE_SCOPES.siteVerification]) };
-const usage = 'ryusenkei-search-console token|verify <ドメイン> / submit <サイト> <sitemap の URL> / sitemaps <サイト>';
+const usage = 'usage: ryusenkei-search-console token|verify <ドメイン> / submit <サイト> <sitemap の URL> / sitemaps <サイト>';
 
 try {
-  if (command === 'token' && a) {
+  if (command === '--help' || command === '-h') {
+    console.log(usage);
+  } else if (command === 'token' && a) {
     console.log(await siteVerificationToken(a, options));
   } else if (command === 'verify' && a) {
     await verifyDomain(a, options);

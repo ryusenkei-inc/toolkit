@@ -1,9 +1,10 @@
 // Terraform の実行の準備（Terraform 用のトークン、R2 の state の認証と backend の設定）
 import { createHash } from 'node:crypto';
 import { basename } from 'node:path';
+import type { S3Credentials } from './lock-stores.ts';
 
 export type TerraformConfig = {
-  /** state を置く R2 のバケット（会社で共有。命名は platform） */
+  /** state を置く R2 のバケット（会社で共有するもの） */
   stateBucket: string;
   /** state のキーの接頭辞（リポの名前）。キーは `<接頭辞>/<スタックのディレクトリ名>.tfstate` */
   stateKeyPrefix: string;
@@ -47,16 +48,24 @@ export const backendConfigArgs = (bucket: string, key: string): string[] =>
  * R2 の S3 互換の認証をトークンから導出する（ID はトークンの ID、秘密はトークンの値の SHA-256）
  * - アカウントのトークンとユーザーのトークンで確認の API が違うので、順に試す
  * - 導出できなければ `undefined`（`.env` に `AWS_ACCESS_KEY_ID`・`AWS_SECRET_ACCESS_KEY` を明示する）
+ * - 戻り値は `r2LockStore` の `credentials` にそのまま渡せる。環境変数にするときは `s3CredentialsEnv`
  */
-export async function r2CredentialsOf(token: string, accountId: string, fetcher: typeof fetch = fetch): Promise<{ AWS_ACCESS_KEY_ID: string; AWS_SECRET_ACCESS_KEY: string } | undefined> {
+export async function r2CredentialsOf(token: string, accountId: string, options: Readonly<{ fetch?: typeof fetch }> = {}): Promise<S3Credentials | undefined> {
+  const fetcher = options.fetch ?? fetch;
   for (const path of [`accounts/${accountId}/tokens/verify`, 'user/tokens/verify']) {
     try {
       const res = await fetcher(`https://api.cloudflare.com/client/v4/${path}`, { headers: { authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(10_000) });
       const body = (await res.json()) as { success?: boolean; result?: { id?: string } };
-      if (body.success && body.result?.id) return { AWS_ACCESS_KEY_ID: body.result.id, AWS_SECRET_ACCESS_KEY: createHash('sha256').update(token).digest('hex') };
+      if (body.success && body.result?.id) return { accessKeyId: body.result.id, secretAccessKey: createHash('sha256').update(token).digest('hex') };
     } catch {
       // 次の確認の API を試す
     }
   }
   return undefined;
 }
+
+/** S3 互換の認証を、Terraform や AWS の CLI が読む環境変数にする */
+export const s3CredentialsEnv = (credentials: S3Credentials): { AWS_ACCESS_KEY_ID: string; AWS_SECRET_ACCESS_KEY: string } => ({
+  AWS_ACCESS_KEY_ID: credentials.accessKeyId,
+  AWS_SECRET_ACCESS_KEY: credentials.secretAccessKey,
+});

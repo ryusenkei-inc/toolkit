@@ -31,14 +31,14 @@ describe('lockStateOf', () => {
   const lock = (at: string) => JSON.stringify({ owner: 'host:1', at });
 
   it('なし・空・壊れた内容は空き、期限内は実行中、古いロックは空き（持ち主を返す）', () => {
-    expect(lockStateOf(null, now)).toEqual({ kind: 'free' });
-    expect(lockStateOf('  ', now)).toEqual({ kind: 'free' });
-    expect(lockStateOf('{', now)).toEqual({ kind: 'free' });
-    expect(lockStateOf(JSON.stringify({ owner: 'x' }), now)).toEqual({ kind: 'free' });
-    expect(lockStateOf(lock('2026-11-15T11:50:00Z'), now)).toEqual({ kind: 'held', lock: { owner: 'host:1', at: '2026-11-15T11:50:00Z' } });
+    expect(lockStateOf(null, { now: () => now })).toEqual({ kind: 'free' });
+    expect(lockStateOf('  ', { now: () => now })).toEqual({ kind: 'free' });
+    expect(lockStateOf('{', { now: () => now })).toEqual({ kind: 'free' });
+    expect(lockStateOf(JSON.stringify({ owner: 'x' }), { now: () => now })).toEqual({ kind: 'free' });
+    expect(lockStateOf(lock('2026-11-15T11:50:00Z'), { now: () => now })).toEqual({ kind: 'held', lock: { owner: 'host:1', at: '2026-11-15T11:50:00Z' } });
     const old = new Date(now - DEFAULT_STALE_MS - 1).toISOString();
-    expect(lockStateOf(lock(old), now)).toEqual({ kind: 'free', stale: { owner: 'host:1', at: old } });
-    expect(lockStateOf(lock('2026-11-15T11:50:00Z'), now, 5 * 60_000)).toMatchObject({ kind: 'free' });
+    expect(lockStateOf(lock(old), { now: () => now })).toEqual({ kind: 'free', stale: { owner: 'host:1', at: old } });
+    expect(lockStateOf(lock('2026-11-15T11:50:00Z'), { now: () => now, staleMs: 5 * 60_000 })).toMatchObject({ kind: 'free' });
   });
 });
 
@@ -101,7 +101,7 @@ describe('signS3Request', () => {
       region: 'us-east-1',
       credentials: { accessKeyId: 'AKIAIOSFODNN7EXAMPLE', secretAccessKey: 'wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY' },
       extra: { range: 'bytes=0-9' },
-      now: new Date('2013-05-24T00:00:00Z'),
+      now: () => Date.parse('2013-05-24T00:00:00Z'),
     });
     expect(r.headers.authorization).toBe(
       'AWS4-HMAC-SHA256 Credential=AKIAIOSFODNN7EXAMPLE/20130524/us-east-1/s3/aws4_request, SignedHeaders=host;range;x-amz-content-sha256;x-amz-date, Signature=f0e8bdb87c964420e857bd35b5d6ed310bd44f0170aba48dd91039c6036bdb41',
@@ -149,5 +149,15 @@ describe('アダプター', () => {
     expect(calls[1]!.headers.authorization).toBe('Bearer tok');
     await store.remove();
     expect(store.removeRequest()).toEqual({ url: 'https://storage.googleapis.com/storage/v1/b/state/o/deploy.lock', method: 'DELETE', headers: { authorization: 'Bearer tok' } });
+  });
+
+  it('失敗の分類: 401・403 は ConfigError、接続の失敗と 429・5xx は TransientError、ほかは UsageError', async () => {
+    const store = (reply: () => Promise<Response>) => r2LockStore({ accountId: 'acc', bucket: 'b', key: 'k', credentials: { accessKeyId: 'id', secretAccessKey: 's' }, fetch: reply as unknown as typeof fetch });
+    await expect(store(async () => new Response('denied', { status: 403 })).read()).rejects.toMatchObject({ name: 'ConfigError' });
+    await expect(store(async () => new Response(null, { status: 503 })).read()).rejects.toMatchObject({ name: 'TransientError' });
+    await expect(store(() => Promise.reject(new TypeError('offline'))).read()).rejects.toMatchObject({ name: 'TransientError' });
+    await expect(store(async () => new Response('bad', { status: 400 })).write('{}', null)).rejects.toMatchObject({ name: 'UsageError', code: 'lock_write_failed' });
+    const gcs = gcsLockStore({ bucket: 'b', key: 'k', accessToken: () => 't', fetch: (async () => new Response(null, { status: 401 })) as unknown as typeof fetch });
+    await expect(gcs.remove()).rejects.toMatchObject({ name: 'ConfigError' });
   });
 });

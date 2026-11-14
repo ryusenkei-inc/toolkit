@@ -7,8 +7,8 @@ export const DEFAULT_ALLOWED_LICENSES: readonly string[] = ['0BSD', 'Apache-2.0'
  * SPDX の式が許可されるか
  * - `OR` はどれか1つ、`AND` はすべて。括弧は1段まで。`WITH` の例外は ID だけで判定する
  */
-export function licenseAllowed(expression: string, allowed: Iterable<string> = DEFAULT_ALLOWED_LICENSES): boolean {
-  const ids = new Set(allowed);
+export function licenseAllowed(expression: string, options: Readonly<{ allowed?: Iterable<string> }> = {}): boolean {
+  const ids = new Set(options.allowed ?? DEFAULT_ALLOWED_LICENSES);
   const body = expression.trim().replace(/^\((.*)\)$/, '$1');
   return body.split(/\s+OR\s+/).some((alt) =>
     alt.split(/\s+AND\s+/).every((term) => {
@@ -33,6 +33,6 @@ export function licenseViolations(listing: LicenseListing, options: LicenseCheck
   const allowed = [...(options.allowed ?? DEFAULT_ALLOWED_LICENSES)];
   const ignore = new Set(options.ignore ?? []);
   return Object.entries(listing)
-    .filter(([license]) => !licenseAllowed(license, allowed))
+    .filter(([license]) => !licenseAllowed(license, { allowed }))
     .flatMap(([license, packages]) => packages.filter((p) => !ignore.has(p.name)).map((p) => `${license}: ${p.name}@${p.versions.join(',')}`));
 }

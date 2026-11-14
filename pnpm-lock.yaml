@@ -66,6 +66,9 @@ importers:
 
   packages/scripts:
     dependencies:
+      '@ryusenkei/core':
+        specifier: workspace:^
+        version: link:../core
       cross-spawn:
         specifier: ^7.0.6
         version: 7.0.6

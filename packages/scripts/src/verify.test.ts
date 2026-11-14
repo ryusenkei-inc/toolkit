@@ -47,7 +47,7 @@ describe('licenses', () => {
     expect(licenseAllowed('(MIT OR GPL-3.0)')).toBe(true);
     expect(licenseAllowed('MIT AND GPL-3.0')).toBe(false);
     expect(licenseAllowed('Apache-2.0 WITH LLVM-exception')).toBe(true);
-    expect(licenseAllowed('GPL-3.0', ['GPL-3.0'])).toBe(true);
+    expect(licenseAllowed('GPL-3.0', { allowed: ['GPL-3.0'] })).toBe(true);
     const listing = { MIT: [{ name: 'a', versions: ['1.0.0'] }], 'GPL-3.0': [{ name: 'b', versions: ['1.0.0', '2.0.0'] }, { name: 'c', versions: ['1.0.0'] }] };
     expect(licenseViolations(listing)).toEqual(['GPL-3.0: b@1.0.0,2.0.0', 'GPL-3.0: c@1.0.0']);
     expect(licenseViolations(listing, { ignore: ['c'] })).toEqual(['GPL-3.0: b@1.0.0,2.0.0']);
@@ -74,7 +74,7 @@ describe('Google', () => {
   });
 
   it('gcloud のトークンは取れなければ例外', async () => {
-    await expect(gcloudAccessToken({ run: () => null })()).rejects.toThrow('gcloud_token_failed');
+    await expect(gcloudAccessToken({ run: () => null })()).rejects.toMatchObject({ name: 'ConfigError', key: 'gcloud' });
     expect(await gcloudAccessToken({ run: () => 'tok' })()).toBe('tok');
   });
 
@@ -94,6 +94,6 @@ describe('Google', () => {
       { url: 'https://www.googleapis.com/webmasters/v3/sites/sc-domain%3Aexample.com/sitemaps/https%3A%2F%2Fexample.com%2Fsitemap.xml', method: 'PUT' },
     ]);
     const failing = { accessToken: async () => 'tok', fetch: (async () => new Response('denied', { status: 403 })) as unknown as typeof fetch };
-    await expect(addSite('sc-domain:example.com', failing)).rejects.toThrow('google_api_failed: PUT /webmasters/v3/sites/sc-domain%3Aexample.com 403 denied');
+    await expect(addSite('sc-domain:example.com', failing)).rejects.toMatchObject({ name: 'ConfigError', message: 'Google の API の失敗: PUT /webmasters/v3/sites/sc-domain%3Aexample.com: 403 denied' });
   });
 });
