@@ -26,7 +26,7 @@ jobs:
         with:
           fetch-depth: 0 # 秘密値の検査は全履歴が対象
       # Node・Terraform = 呼ぶ側の mise.toml
-      - uses: jdx/mise-action@v4
+      - uses: jdx/mise-action@v5
       - uses: pnpm/action-setup@v6
       - name: Install
         run: pnpm install --frozen-lockfile

@@ -15,7 +15,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       # Node = 呼ぶ側の mise.toml
-      - uses: jdx/mise-action@v4
+      - uses: jdx/mise-action@v5
       # タイトルは環境変数で受け渡し（式の展開によるコマンドの注入を防止）
       #   npx: prose-lint だけを取得し、版は呼ぶ側の package.json の指定に追従
       - name: PR title
