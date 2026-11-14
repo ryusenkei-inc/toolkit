@@ -1,0 +1,64 @@
+# 利用する側のリポの Go の検査（再利用可能なワークフロー）: vet、test を OS ごとに、ubuntu で各 OS・CPU 向けのビルド
+#   トリガー・concurrency は呼ぶ側に置く（例は packages/conventions の README）
+#   macOS・Windows の分は非公開のリポでは分数の倍率が高い。非公開なら os を ubuntu だけにする
+name: Reusable Go
+
+on:
+  workflow_call:
+    inputs:
+      os:
+        description: test を実行する OS（JSON の配列）
+        type: string
+        default: '["ubuntu-latest", "macos-latest", "windows-latest"]'
+      targets:
+        description: ubuntu でビルドを確かめる GOOS/GOARCH（空白区切り、空ならビルドしない）
+        type: string
+        default: linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64 windows/arm64
+      packages:
+        description: 対象のパッケージ
+        type: string
+        default: ./...
+      working-directory:
+        description: go.mod のあるディレクトリ
+        type: string
+        default: .
+
+permissions:
+  contents: read
+
+jobs:
+  go:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: ${{ fromJSON(inputs.os) }}
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+        working-directory: ${{ inputs.working-directory }}
+    steps:
+      - uses: actions/checkout@v7
+      # Go の版は go.mod
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: ${{ inputs.working-directory }}/go.mod
+          cache-dependency-path: ${{ inputs.working-directory }}/go.sum
+      - name: Vet
+        env:
+          PACKAGES: ${{ inputs.packages }}
+        run: go vet $PACKAGES
+      - name: Test
+        env:
+          PACKAGES: ${{ inputs.packages }}
+        run: go test $PACKAGES
+      - name: Cross-compile
+        if: matrix.os == 'ubuntu-latest' && inputs.targets != ''
+        env:
+          PACKAGES: ${{ inputs.packages }}
+          TARGETS: ${{ inputs.targets }}
+        run: |
+          for target in $TARGETS; do
+            echo "== $target"
+            GOOS=${target%/*} GOARCH=${target#*/} go build $PACKAGES
+          done

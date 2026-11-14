@@ -1,0 +1,51 @@
+# 利用する側のリポの Go の配布（再利用可能なワークフロー）: test の後、GoReleaser で GitHub Releases にバイナリを公開
+#   設定は呼ぶ側の .goreleaser.yaml。トリガー（タグ `v*` の push）と権限（contents: write）は呼ぶ側に置く
+name: Reusable Go release
+
+on:
+  workflow_call:
+    inputs:
+      checks:
+        description: test の後、公開の前に実行するコマンド（例: 版とタグの一致）
+        type: string
+        default: ''
+      goreleaser-version:
+        description: GoReleaser の版
+        type: string
+        default: '~> v2'
+      working-directory:
+        description: go.mod と .goreleaser.yaml のあるディレクトリ
+        type: string
+        default: .
+
+permissions:
+  contents: write # リリースの作成とファイルの添付
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ${{ inputs.working-directory }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0 # 変更の一覧と Go の VCS の情報にタグと履歴が要る
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: ${{ inputs.working-directory }}/go.mod
+          cache-dependency-path: ${{ inputs.working-directory }}/go.sum
+      - name: Test
+        run: go test ./...
+      - name: Checks
+        if: inputs.checks != ''
+        env:
+          CHECKS: ${{ inputs.checks }}
+        run: bash -eo pipefail -c "$CHECKS"
+      - uses: goreleaser/goreleaser-action@v7
+        with:
+          version: ${{ inputs.goreleaser-version }}
+          args: release --clean
+          workdir: ${{ inputs.working-directory }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

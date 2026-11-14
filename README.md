@@ -8,7 +8,7 @@ Shared packages for RYUSENKEI repositories, published to npm under `@ryusenkei`.
 | --- | --- |
 | [`@ryusenkei/prose-lint`](packages/prose-lint) | Checker for mechanical errors in Japanese technical writing (comments, Markdown, commit messages) |
 | [`@ryusenkei/conventions`](packages/conventions) | Shared conventions: Claude Code rules and hooks, and sync of the shared files |
-| [`@ryusenkei/scripts`](packages/scripts) | Shared scripts: child processes, the `.env` CLI, and GitHub repository settings |
+| [`@ryusenkei/scripts`](packages/scripts) | Shared scripts: child processes, the `.env` CLI, the deploy lock and post-deploy checks, Search Console, the npm license check, and GitHub repository settings |
 | [`@ryusenkei/core`](packages/core) | Runtime-independent base: `Result`, infrastructure errors and their classification, structured logging, tracing, error reporting |
 | [`@ryusenkei/web`](packages/web) | Runtime libraries for web products on Cloudflare Workers and Vercel: HTTP failure responses, forms, legal documents, mail, webhook signing, analytics, SEO, and the Cloudflare, Turnstile, and Access integrations (subpath exports) |
 | [`@ryusenkei/company`](packages/company) | RYUSENKEI's company values (operator, legal and contact defaults) to pass to `@ryusenkei/web` |
@@ -26,11 +26,11 @@ pnpm build     # build dist/ for each package
 
 ## Terraform modules
 
-`terraform/modules/` has small modules for DNS records, Turnstile widgets, Access applications, and www redirects. They are referenced by Git with `terraform-v<version>` tags; see the [Terraform README](terraform/README.md).
+`terraform/modules/` has small modules for DNS records, Turnstile widgets, Access applications, www and trailing-slash redirects, and Search Console verification. They are referenced by Git with `terraform-v<version>` tags; see the [Terraform README](terraform/README.md).
 
 ## Reusable workflows
 
-`.github/workflows/reusable-ci.yaml` and `reusable-pr-title.yaml` are the CI of the other repositories. The [conventions README](packages/conventions/README.md#ci) shows how to call them.
+`.github/workflows/reusable-ci.yaml`, `reusable-pr-title.yaml`, `reusable-go.yaml`, and `reusable-go-release.yaml` are the CI of the other repositories. The [conventions README](packages/conventions/README.md#ci) shows how to call them.
 
 ## Publishing
 
