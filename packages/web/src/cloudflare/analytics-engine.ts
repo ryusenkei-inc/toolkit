@@ -1,5 +1,5 @@
 import { ConfigError, log, TransientError } from '@ryusenkei/core';
-import type { CountQuery, CountRow, EventCounts, EventOf, EventRecorder, EventSchema } from '../analytics/index.ts';
+import { indexOf, type IndexName, type CountQuery, type CountRow, type EventCounts, type EventOf, type EventRecorder, type EventSchema } from '../analytics/index.ts';
 
 /** Workers Analytics Engine の binding（使う部分だけの型。`@cloudflare/workers-types` に依存しない） */
 export type AnalyticsEngineDataset = { writeDataPoint(point: { blobs?: string[]; doubles?: number[]; indexes?: string[] }): void };
@@ -14,9 +14,10 @@ export type AnalyticsEngineRecorderOptions = {
 /**
  * Analytics Engine への記録（`EventRecorder`）
  * - 文字列の項目を `blob1`〜、数の項目を `double1`〜に、`schema` の順で入れる。ない文字列は空
+ * - `schema.index` があれば `index1` に入れる
  * - 書き込みの失敗は `analytics_write_failed` を記録して無視する（計測の欠けで応答を止めない）
  */
-export function analyticsEngineRecorder<B extends string, D extends string>(binding: AnalyticsEngineDataset | undefined, schema: EventSchema<B, D>, options: AnalyticsEngineRecorderOptions = {}): EventRecorder<EventOf<B, D>> {
+export function analyticsEngineRecorder<B extends string, D extends string, I extends string = never>(binding: AnalyticsEngineDataset | undefined, schema: EventSchema<B, D, I>, options: AnalyticsEngineRecorderOptions = {}): EventRecorder<EventOf<B, D, I>> {
   const missing = options.missingDouble ?? 0;
   return {
     record(event) {
@@ -26,10 +27,11 @@ export function analyticsEngineRecorder<B extends string, D extends string>(bind
       }
       const values = event as Partial<Record<string, string | number>>;
       try {
+        const index = indexOf(schema, event);
         binding.writeDataPoint({
           blobs: schema.blobs.map((k) => String(values[k] ?? '')),
           doubles: (schema.doubles ?? []).map((k) => Number(values[k] ?? missing)),
-          ...(schema.index && { indexes: [schema.index(event)] }),
+          ...(index !== undefined && { indexes: [index] }),
         });
       } catch (e) {
         log('warn', 'analytics_write_failed', { error: e });
@@ -38,14 +40,14 @@ export function analyticsEngineRecorder<B extends string, D extends string>(bind
   };
 }
 
-export type AnalyticsEngineCountsOptions<B extends string, D extends string> = {
+export type AnalyticsEngineCountsOptions<B extends string, D extends string, I extends string = never> = {
   accountId: string;
   /** API トークン（権限は Account Analytics の読み込み） */
   token: string;
   /** データセットの名前（wrangler の `analytics_engine_datasets` の `dataset`） */
   dataset: string;
   /** 記録と同じ出来事の形 */
-  schema: EventSchema<B, D>;
+  schema: EventSchema<B, D, I>;
   /** 1回の呼び出しの時間切れ（ミリ秒、既定は5000） */
   timeoutMs?: number;
   fetch?: typeof fetch;
@@ -74,16 +76,19 @@ const literal = (value: string) => {
 
 /**
  * Analytics Engine の SQL API による集計の読み込み元（`EventCounts`）
+ * - 文字列の項目は `blob1`〜、名前で書いた index の項目は `index1` で読む
  * - 件数は `SUM(_sample_interval)` で標本を補正した値。`distinct` は値の種類の数で、標本を取ったときは少なめになる
  * - 日の区切りは条件の `timeZone`。書き込みから数秒〜数十秒で読める
  * - 行は1万行ずつ読み、20万行を超えたら例外（途中までの値で集計を上書きしないため）
  * - 状態が429と 5xx の応答は `TransientError`。SQL に入れる値は引用符と逆斜線と制御文字を拒む
  */
-export function analyticsEngineCounts<B extends string, D extends string>(options: AnalyticsEngineCountsOptions<B, D>): EventCounts<B> {
+export function analyticsEngineCounts<B extends string, D extends string, I extends string = never>(options: AnalyticsEngineCountsOptions<B, D, I>): EventCounts<B | IndexName<I>> {
+  type K = B | IndexName<I>;
   if (!DATASET.test(options.dataset)) throw new ConfigError('Analytics Engine のデータセットの名前が不正', { key: 'dataset' });
   const fetcher = options.fetch ?? fetch;
-  const column = (key: B) => {
-    const i = options.schema.blobs.indexOf(key);
+  const column = (key: K) => {
+    if (typeof options.schema.index === 'string' && key === options.schema.index) return 'index1';
+    const i = (options.schema.blobs as readonly string[]).indexOf(key);
     if (i < 0) throw new Error(`unknown_field: ${key}`);
     return `blob${i + 1}`;
   };
@@ -102,24 +107,24 @@ export function analyticsEngineCounts<B extends string, D extends string>(option
   }
 
   return {
-    async count(query: CountQuery<B>): Promise<readonly CountRow<B>[]> {
+    async count(query: CountQuery<K>): Promise<readonly CountRow<K>[]> {
       if (!TIME_ZONE.test(query.timeZone)) throw new Error(`invalid_time_zone: ${query.timeZone}`);
       const [from, to] = [checkedDate(query.from), checkedDate(query.to)];
       const tz = literal(query.timeZone);
       const groupBy = query.groupBy ?? [];
       const select = [`formatDateTime(timestamp, '%Y-%m-%d', ${tz}) AS day`, ...groupBy.map((k, i) => `${column(k)} AS k${i}`), 'SUM(_sample_interval) AS events', ...(query.distinct ? [`count(DISTINCT ${column(query.distinct)}) AS uniq`] : [])];
       const where = [`timestamp >= toDateTime('${from} 00:00:00', ${tz})`, `timestamp < toDateTime('${nextDay(to)} 00:00:00', ${tz})`];
-      for (const [k, wanted] of Object.entries(query.where ?? {}) as [B, string | readonly string[]][]) {
+      for (const [k, wanted] of Object.entries(query.where ?? {}) as [K, string | readonly string[]][]) {
         const values = typeof wanted === 'string' ? [wanted] : wanted;
         where.push(values.length ? `(${values.map((v) => `${column(k)} = ${literal(v)}`).join(' OR ')})` : '1 = 0');
       }
       const keys = ['day', ...groupBy.map((_, i) => `k${i}`)].join(', ');
       const base = `SELECT ${select.join(', ')} FROM ${options.dataset} WHERE ${where.join(' AND ')} GROUP BY ${keys} ORDER BY ${keys}`;
-      const rows: CountRow<B>[] = [];
+      const rows: CountRow<K>[] = [];
       for (let n = 0; n < MAX_PAGES; n++) {
         const data = await page(`${base} LIMIT ${PAGE_ROWS} OFFSET ${n * PAGE_ROWS} FORMAT JSON`);
         for (const r of data) {
-          const keyValues = Object.fromEntries(groupBy.map((k, i) => [k, String(r[`k${i}`] ?? '')])) as Partial<Record<B, string>>;
+          const keyValues = Object.fromEntries(groupBy.map((k, i) => [k, String(r[`k${i}`] ?? '')])) as Partial<Record<K, string>>;
           rows.push({ day: String(r.day), keys: keyValues, count: Math.round(Number(r.events)), ...(query.distinct && { distinct: Number(r.uniq) }) });
         }
         if (data.length < PAGE_ROWS) return rows;

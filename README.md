@@ -10,7 +10,7 @@ Shared packages for RYUSENKEI repositories, published to npm under `@ryusenkei`.
 | [`@ryusenkei/conventions`](packages/conventions) | Shared conventions: Claude Code rules and hooks, and sync of the shared files |
 | [`@ryusenkei/scripts`](packages/scripts) | Shared scripts: child processes, the `.env` CLI, and GitHub repository settings |
 | [`@ryusenkei/core`](packages/core) | Runtime-independent base: `Result`, infrastructure errors and their classification, structured logging, tracing, error reporting |
-| [`@ryusenkei/web`](packages/web) | Runtime libraries for web products on Cloudflare Workers and Vercel: HTTP failure responses, forms, legal documents, mail, webhook signing, analytics, and the Cloudflare, Turnstile, and Access integrations (subpath exports) |
+| [`@ryusenkei/web`](packages/web) | Runtime libraries for web products on Cloudflare Workers and Vercel: HTTP failure responses, forms, legal documents, mail, webhook signing, analytics, SEO, and the Cloudflare, Turnstile, and Access integrations (subpath exports) |
 | [`@ryusenkei/company`](packages/company) | RYUSENKEI's company values (operator, legal and contact defaults) to pass to `@ryusenkei/web` |
 
 `@ryusenkei/core` 0.3.0 and `@ryusenkei/web` replace `core` 0.2.x and the deprecated `form`, `legal`, `mail`, `adapter-cloudflare`, `adapter-turnstile`, `adapter-access`, `rate-limit`, `bot-check`, `blob`, and `auth` packages.

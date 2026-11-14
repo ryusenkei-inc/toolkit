@@ -45,6 +45,25 @@ describe('analyticsEngineCounts', () => {
     );
   });
 
+  it('名前で書いた index の項目は index1 に入れ、index1 で読む', async () => {
+    const named = defineEventSchema({ blobs: ['event'], index: 'subject' });
+    const points: unknown[] = [];
+    analyticsEngineRecorder({ writeDataPoint: (p) => void points.push(p) }, named).record({ event: 'click', subject: '4901234567894' });
+    expect(points).toEqual([{ blobs: ['click'], doubles: [], indexes: ['4901234567894'] }]);
+
+    const bodies: string[] = [];
+    const fetcher = (async (_url: string, init: RequestInit) => {
+      bodies.push(String(init.body));
+      return reply([{ day: '2026-11-14', k0: '4901234567894', events: 3, uniq: 1 }]);
+    }) as unknown as typeof fetch;
+    const counts = analyticsEngineCounts({ accountId: 'acc', token: 'tok', dataset: 'd', schema: named, fetch: fetcher });
+    const rows = await counts.count({ from: '2026-11-14', to: '2026-11-14', timeZone: 'UTC', groupBy: ['subject'], where: { subject: ['4901234567894'] }, distinct: 'subject' });
+    expect(rows).toEqual([{ day: '2026-11-14', keys: { subject: '4901234567894' }, count: 3, distinct: 1 }]);
+    expect(bodies[0]).toContain('index1 AS k0');
+    expect(bodies[0]).toContain("(index1 = '4901234567894')");
+    expect(bodies[0]).toContain('count(DISTINCT index1) AS uniq');
+  });
+
   it('1万行ごとに次の頁を読む', async () => {
     const full = Array.from({ length: 10_000 }, () => ({ day: '2026-11-14', events: 1 }));
     const fetcher = vi.fn(async () => reply(fetcher.mock.calls.length === 1 ? full : [{ day: '2026-11-14', events: 1 }]));
