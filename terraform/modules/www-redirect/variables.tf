@@ -37,3 +37,9 @@ variable "extra_rules" {
     error_message = "extra_rules の各規則には target_expression か target_url のどちらか1つを書く"
   }
 }
+
+variable "ruleset_name" {
+  type        = string
+  description = "ruleset の名前（既定は「<domain> の www の転送」。既存の ruleset を取り込むときに今の名前を渡すと、作り直さない）"
+  default     = null
+}
