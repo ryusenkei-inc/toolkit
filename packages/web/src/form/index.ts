@@ -4,19 +4,23 @@ import { isEmailAddress } from '../mail/index.ts';
 
 /** 項目の種類。長さは HTML の `maxlength` と同じ UTF-16 の単位で数える */
 export type FieldSpec =
-  | Readonly<{ kind: 'text' | 'multiline'; maxLength: number }>
+  | Readonly<{ kind: 'text' | 'multiline'; maxLength: number; minLength?: number }>
   | Readonly<{ kind: 'email'; maxLength?: number }>
   | Readonly<{ kind: 'url'; maxLength: number; hosts?: readonly string[] }>
   | Readonly<{ kind: 'choice'; choices: readonly string[] }>;
 
-export type FieldEntry = FieldSpec & Readonly<{ required?: boolean }>;
+/** 別の項目の値がどれかに一致するときだけ必須にする（項目をまたぐ規則を、関数なしの宣言で書く） */
+export type RequiredWhen = Readonly<{ field: string; in: readonly string[] }>;
+
+export type FieldEntry = FieldSpec & Readonly<{ required?: boolean; requiredWhen?: RequiredWhen }>;
 
 export type FormValues<F extends string = string> = Partial<Record<F, string>>;
 
 /**
  * フォームの宣言
  * - `fields` の順が、表示・検査・通知の本文の順
- * - `refine`: 項目をまたぐ規則（例: 種別が訂正なら URL が必須）。各項目の検査を通った値を受け取る
+ * - `refine`: 宣言で書けない、項目をまたぐ規則。各項目の検査を通った値を受け取る
+ * - `refine` を使わなければ宣言は JSON にできる（サーバーが配り、画面と受け取りの処理が同じ宣言で検査する）
  */
 export type Form<F extends string = string> = Readonly<{
   fields: Readonly<Record<F, FieldEntry>>;
@@ -28,9 +32,9 @@ export const defineForm = <F extends string>(form: Form<F>): Form<F> => form;
 
 /**
  * 検査のエラーコード（文言は画面側の辞書で引く）
- * - `too_long` は `params.max` に上限
+ * - `too_long` は `params.max`、`too_short` は `params.min` に上限・下限
  */
-export type FieldErrorCode = 'required' | 'too_long' | 'invalid_email' | 'invalid_url' | 'url_host' | 'invalid_choice';
+export type FieldErrorCode = 'required' | 'too_long' | 'too_short' | 'invalid_email' | 'invalid_url' | 'url_host' | 'invalid_choice';
 
 export type ParseResult<F extends string = string> = Readonly<{ ok: true; values: FormValues<F> }> | Readonly<{ ok: false; problems: readonly Problem[] }>;
 
@@ -73,7 +77,8 @@ function check(name: string, spec: FieldSpec, value: string): Problem | undefine
       return spec.hosts && !spec.hosts.includes(url.hostname) ? { path: name, code: 'url_host' } : undefined;
     }
     default:
-      return value.length > spec.maxLength ? { path: name, code: 'too_long', params: { max: spec.maxLength } } : undefined;
+      if (value.length > spec.maxLength) return { path: name, code: 'too_long', params: { max: spec.maxLength } };
+      return spec.minLength !== undefined && value.length < spec.minLength ? { path: name, code: 'too_short', params: { min: spec.minLength } } : undefined;
   }
 }
 
@@ -81,15 +86,19 @@ function check(name: string, spec: FieldSpec, value: string): Problem | undefine
  * 送信された値を整形して検査する
  * - 宣言にない項目は無視する
  * - 未入力の任意の項目は値に含めない
+ * - `requiredWhen` は、参照する項目の整形した値で判定する
  */
 export function parseForm<F extends string>(form: Form<F>, input: FormData | Readonly<Record<string, unknown>>): ParseResult<F> {
   const problems: Problem[] = [];
   const values: FormValues<F> = {};
-  for (const name of Object.keys(form.fields) as F[]) {
+  const names = Object.keys(form.fields) as F[];
+  const normalized = new Map(names.map((name) => [name as string, normalize(form.fields[name], read(input, name))]));
+  const required = (entry: FieldEntry) => entry.required === true || (entry.requiredWhen !== undefined && entry.requiredWhen.in.includes(normalized.get(entry.requiredWhen.field) ?? ''));
+  for (const name of names) {
     const entry = form.fields[name];
-    const value = normalize(entry, read(input, name));
+    const value = normalized.get(name) ?? '';
     if (!value) {
-      if (entry.required) problems.push({ path: name, code: 'required' });
+      if (required(entry)) problems.push({ path: name, code: 'required' });
       continue;
     }
     const problem = check(name, entry, value);
@@ -99,3 +108,5 @@ export function parseForm<F extends string>(form: Form<F>, input: FormData | Rea
   if (problems.length === 0 && form.refine) problems.push(...form.refine(values));
   return problems.length ? { ok: false, problems } : { ok: true, values };
 }
+
+export { FORM_MESSAGES_JA, formMessage, problemMessage, type FormMessageCode, type FormMessages } from './messages.ts';

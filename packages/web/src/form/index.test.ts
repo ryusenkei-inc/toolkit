@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { defineForm, multiLine, oneLine, parseForm } from './index.ts';
+import { defineForm, FORM_MESSAGES_JA, formMessage, multiLine, oneLine, parseForm, problemMessage } from './index.ts';
 
 const LS = String.fromCharCode(0x2028);
 const NEL = String.fromCharCode(0x85);
@@ -77,5 +77,40 @@ describe('parseForm', () => {
   it('JSON のオブジェクトも受け取り、継承した値（__proto__ など）は読まない', () => {
     expect(parseForm(inquiry, { ...valid }).ok).toBe(true);
     expect(parseForm(defineForm({ fields: { toString: { kind: 'text', maxLength: 10, required: true } } }), {})).toEqual({ ok: false, problems: [{ path: 'toString', code: 'required' }] });
+  });
+});
+
+describe('minLength と requiredWhen', () => {
+  const contact = defineForm({
+    fields: {
+      type: { kind: 'choice', choices: ['correction', 'other'], required: true },
+      url: { kind: 'url', maxLength: 2000, requiredWhen: { field: 'type', in: ['correction'] } },
+      message: { kind: 'multiline', maxLength: 4000, minLength: 10, required: true },
+    },
+  });
+
+  it('下限より短い値は too_short、参照する項目の値が一致すれば必須', () => {
+    expect(parseForm(contact, { type: 'correction', message: '短い' })).toEqual({
+      ok: false,
+      problems: [
+        { path: 'url', code: 'required' },
+        { path: 'message', code: 'too_short', params: { min: 10 } },
+      ],
+    });
+    expect(parseForm(contact, { type: 'other', message: 'じゅうぶんな長さの本文' })).toEqual({ ok: true, values: { type: 'other', message: 'じゅうぶんな長さの本文' } });
+  });
+
+  it('refine のない宣言は JSON にしても同じに検査できる', () => {
+    const copied = JSON.parse(JSON.stringify(contact)) as typeof contact;
+    expect(parseForm(copied, { type: 'correction', message: '短い' })).toEqual(parseForm(contact, { type: 'correction', message: '短い' }));
+  });
+});
+
+describe('文言の辞書', () => {
+  it('標準の文言に params を差し込み、上書きを優先し、知らないコードはそのまま', () => {
+    expect(problemMessage({ path: 'message', code: 'too_short', params: { min: 10 } })).toBe('10文字以上で入力してください');
+    expect(problemMessage({ path: 'url', code: 'url_host' }, { url_host: 'サイトの記事の URL を入力してください' })).toBe('サイトの記事の URL を入力してください');
+    expect(formMessage('custom_rule')).toBe('custom_rule');
+    expect(formMessage('rate_limited')).toBe(FORM_MESSAGES_JA.rate_limited);
   });
 });

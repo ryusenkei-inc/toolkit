@@ -5,7 +5,7 @@ import type { Problem } from '@ryusenkei/core';
 export type SubmissionErrorCode = 'invalid' | 'too_large' | 'rate_limited' | 'bot_check_failed' | 'unavailable' | 'not_configured' | 'internal' | 'method_not_allowed';
 
 export type SubmitResult =
-  | Readonly<{ ok: true }>
+  | Readonly<{ ok: true; id?: string | null }>
   | Readonly<{
       ok: false;
       /** `network` は応答を受け取れなかった（通信の失敗、想定外の応答） */
@@ -22,8 +22,8 @@ export async function submitForm(url: string, body: FormData, options: { fetch?:
   } catch {
     return { ok: false, error: 'network', problems: [] };
   }
-  const data = (await res.json().catch(() => null)) as { ok?: boolean; error?: SubmissionErrorCode; problems?: Problem[] } | null;
-  if (res.ok && data?.ok) return { ok: true };
+  const data = (await res.json().catch(() => null)) as { ok?: boolean; id?: string | null; error?: SubmissionErrorCode; problems?: Problem[] } | null;
+  if (res.ok && data?.ok) return { ok: true, ...(data.id !== undefined && { id: data.id }) };
   const retryAfter = Number(res.headers.get('retry-after'));
   return {
     ok: false,
