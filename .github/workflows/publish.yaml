@@ -30,6 +30,6 @@ jobs:
           actual=$(NAME="$name" node -p "require('./packages/' + process.env.NAME + '/package.json').version")
           test "$version" = "$actual" || { echo "タグ $version と packages/$name/package.json $actual が不一致"; exit 1; }
           echo "FILTER=./packages/$name" >> "$GITHUB_ENV"
-      # 依存先（company の型が参照する web など）も先にビルドする
-      - run: pnpm -r --filter "$FILTER..." build
+      # 依存先（web が依存する core など）も先にビルドする。パスの選択で依存先を含めるには波括弧が要る
+      - run: pnpm -r --filter "{$FILTER}..." build
       - run: pnpm -r --filter "$FILTER" publish --no-git-checks
