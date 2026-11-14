@@ -6,18 +6,22 @@ import {
   ConfigError,
   DEFAULT_RETRY_AFTER_SEC,
   err,
-  failureResponse,
+  isConfigError,
+  isTransientError,
+  jsonLogReporter,
   log,
   ok,
   reportSafely,
-  sanitizeRequestId,
   serializeError,
+  setLogContext,
   TransientError,
-  withRequestId,
   type Result,
 } from './index.ts';
 
-afterEach(() => vi.restoreAllMocks());
+afterEach(() => {
+  vi.restoreAllMocks();
+  setLogContext(undefined);
+});
 const silence = (level: 'warn' | 'error' | 'info') => vi.spyOn(console, level).mockImplementation(() => undefined);
 
 describe('Result', () => {
@@ -65,50 +69,6 @@ describe('asTransient', () => {
   });
 });
 
-describe('相関の ID', () => {
-  it('正しい形の値はそのまま、ないか不正なら新しく作る', () => {
-    expect(sanitizeRequestId('abc-123')).toBe('abc-123');
-    for (const v of [null, '', 'a b', 'x'.repeat(129), '<script>']) expect(sanitizeRequestId(v)).toMatch(/^[0-9a-f-]{36}$/);
-  });
-
-  it('withRequestId は不正な値を置き換えた要求を返す', () => {
-    const kept = new Request('https://app.example.com/', { headers: { 'x-request-id': 'r1' } });
-    expect(withRequestId(kept)).toEqual({ request: kept, requestId: 'r1' });
-    const { request, requestId } = withRequestId(new Request('https://app.example.com/', { headers: { 'x-request-id': 'bad id' } }));
-    expect(request.headers.get('x-request-id')).toBe(requestId);
-    expect(requestId).not.toBe('bad id');
-  });
-});
-
-describe('failureResponse', () => {
-  it('一時的な失敗は 503 と Retry-After（切り上げ）、本文はコードと相関の ID だけ', async () => {
-    silence('warn');
-    const res = failureResponse(new TransientError('secret detail', { retryAfterSec: 1.5 }), { requestId: 'r1' });
-    expect(res.status).toBe(503);
-    expect(Object.fromEntries(res.headers)).toMatchObject({ 'retry-after': '2', 'cache-control': 'no-store', 'x-request-id': 'r1' });
-    expect(await res.json()).toEqual({ error: 'unavailable', requestId: 'r1' });
-  });
-
-  it('設定の不足は 503 not_configured。設定の名前を本文に出さない', async () => {
-    const warn = silence('warn');
-    const res = failureResponse(new ConfigError('TURNSTILE_SECRET_KEY がない', { key: 'TURNSTILE_SECRET_KEY' }));
-    expect(res.status).toBe(503);
-    expect(res.headers.get('retry-after')).toBeNull();
-    expect(await res.text()).toBe('{"error":"not_configured"}');
-    expect(JSON.parse(String(warn.mock.calls[0]![0]))).toMatchObject({ event: 'not_configured', error: { key: 'TURNSTILE_SECRET_KEY' } });
-  });
-
-  it('想定外の失敗は 500 で報告先へ。defer があれば報告を任せる', async () => {
-    const reports: unknown[] = [];
-    const deferred: Promise<unknown>[] = [];
-    const res = failureResponse(new Error('bug'), { requestId: 'r2', context: { stage: 'route' }, reporter: { report: (e, c) => void reports.push([e, c]) }, defer: (p) => deferred.push(p) });
-    expect(res.status).toBe(500);
-    expect(await res.json()).toEqual({ error: 'internal', requestId: 'r2' });
-    await Promise.all(deferred);
-    expect(reports).toEqual([[new Error('bug'), { stage: 'route', requestId: 'r2', status: 500 }]]);
-  });
-});
-
 describe('報告', () => {
   it('報告先の失敗は飲み込み、ほかの報告先には届く', async () => {
     const warn = silence('warn');
@@ -134,5 +94,57 @@ describe('log', () => {
     expect(s.message).toHaveLength(500);
     expect(s.cause?.cause).toBeUndefined();
     expect(serializeError('text')).toEqual({ name: 'NonError', message: 'text' });
+  });
+});
+
+describe('印による判定', () => {
+  // 版の違う core の複製が作った例外（同じ印を持つ別のクラス）
+  const copied = (brand: string) => Object.assign(new Error('copy'), { [Symbol.for(brand)]: true, retryAfterSec: 7 });
+
+  it('別の複製の例外も分類し、instanceof も一致する', () => {
+    const transient = copied('@ryusenkei/core.TransientError');
+    expect(classifyFailure(transient)).toEqual({ kind: 'transient', retryAfterSec: 7 });
+    expect(classifyFailure(copied('@ryusenkei/core.ConfigError'))).toEqual({ kind: 'config' });
+    expect(transient instanceof TransientError).toBe(true);
+    expect(isTransientError(transient) && !isConfigError(transient)).toBe(true);
+    expect(new Error('x') instanceof TransientError).toBe(false);
+  });
+
+  it('派生のクラスの instanceof は通常の判定', () => {
+    class QuotaError extends TransientError {}
+    expect(new QuotaError('q') instanceof TransientError).toBe(true);
+    expect(new TransientError('t') instanceof QuotaError).toBe(false);
+  });
+});
+
+describe('ログの文脈', () => {
+  it('登録した文脈の項目を各行に足し、呼ぶ側の項目と level・event が優先する', () => {
+    const info = silence('info');
+    setLogContext(() => ({ traceId: 't1', spanId: 's1', event: 'ctx' }));
+    log('info', 'sent', { spanId: 's2' });
+    expect(JSON.parse(String(info.mock.calls[0]![0]))).toEqual({ traceId: 't1', spanId: 's2', level: 'info', event: 'sent' });
+  });
+
+  it('文脈の関数の例外と undefined は無視し、解除できる', () => {
+    const info = silence('info');
+    setLogContext(() => {
+      throw new Error('broken');
+    });
+    log('info', 'a');
+    setLogContext(() => undefined);
+    log('info', 'b');
+    setLogContext(undefined);
+    log('info', 'c');
+    expect(info.mock.calls.map((c) => JSON.parse(String(c[0])))).toEqual([
+      { level: 'info', event: 'a' },
+      { level: 'info', event: 'b' },
+      { level: 'info', event: 'c' },
+    ]);
+  });
+
+  it('ErrorContext は追加の項目と null の requestId を持てる', () => {
+    const error = silence('error');
+    void jsonLogReporter.report(new Error('x'), { requestId: null, project: 'p1', stage: 'queue' });
+    expect(JSON.parse(String(error.mock.calls[0]![0]))).toMatchObject({ event: 'error_report', requestId: null, project: 'p1', stage: 'queue' });
   });
 });

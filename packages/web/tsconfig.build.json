@@ -5,7 +5,8 @@
     "outDir": "dist",
     "rootDir": "src",
     "declaration": true,
-    "rewriteRelativeImportExtensions": true
+    "rewriteRelativeImportExtensions": true,
+    "paths": {}
   },
   "exclude": [
     "src/**/*.test.ts"

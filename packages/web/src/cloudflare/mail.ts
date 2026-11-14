@@ -1,4 +1,4 @@
-import { ConfigError, err, ok, TransientError } from '../core/index.ts';
+import { ConfigError, err, ok, TransientError } from '@ryusenkei/core';
 import { validateMail, type Mail, type MailAddress, type Mailer } from '../mail/index.ts';
 
 /** Email Service の `send_email` binding（使う部分だけの型） */

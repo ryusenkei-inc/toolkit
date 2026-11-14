@@ -1,5 +1,5 @@
 // 受け取りの処理の試験用の偽物（呼び出しの記録と失敗の注入）
-import { err, ok } from '../core/index.ts';
+import { err, ok } from '@ryusenkei/core';
 import type { BotCheckLike, Destination, RateLimiterLike, Submission } from './server.ts';
 
 /** 判定の結果を切り替えられる bot の判定 */

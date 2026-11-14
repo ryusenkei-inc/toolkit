@@ -1,6 +1,4 @@
-import { classifyFailure } from './errors.ts';
-import { log } from './log.ts';
-import { jsonLogReporter, reportSafely, type ErrorContext, type ErrorReporter } from './report.ts';
+import { classifyFailure, jsonLogReporter, log, reportSafely, type ErrorContext, type ErrorReporter } from '@ryusenkei/core';
 
 export const REQUEST_ID_HEADER = 'x-request-id';
 // 外から来た値を、ログや応答にそのまま書いても安全な形に限る
@@ -33,9 +31,16 @@ export function failureOf(e: unknown): Failure {
   return { status: 500, code: 'internal' };
 }
 
+/** `failureResponse` の本文を組み立てる関数に渡す値 */
+export type FailureBodyInput = Readonly<{ failure: Failure; requestId: string | undefined; error: unknown }>;
+
 export type FailureResponseOptions = {
-  requestId?: string;
-  context?: Omit<ErrorContext, 'requestId' | 'status'>;
+  /** 相関の ID（`null` は相関の ID のない処理） */
+  requestId?: string | null;
+  /** ログと報告に添える項目（`requestId` と `status` はこの関数が入れる） */
+  context?: Readonly<{ stage?: string; method?: string; path?: string } & Record<string, unknown>>;
+  /** 本文を組み立てる（既定は `{ error: <code>, requestId }`）。例外の文や設定の名前を入れるかは呼ぶ側の責任 */
+  body?: (input: FailureBodyInput) => unknown;
   /** 想定外の失敗の報告先（既定はログ） */
   reporter?: ErrorReporter;
   /** 報告を応答の後に回す（Workers の `ctx.waitUntil` など） */
@@ -43,14 +48,15 @@ export type FailureResponseOptions = {
 };
 
 /**
- * 例外を JSON の応答（`{ "error": <code>, "requestId": <id> }`）に変える
- * - 本文にはコードだけを入れる（例外の文や設定の名前を出さない）
+ * 例外を JSON の応答（既定は `{ "error": <code>, "requestId": <id> }`）に変える
+ * - 既定の本文にはコードだけを入れる（例外の文や設定の名前を出さない）。`body` で本文の形を変えられる
  * - 一時的な失敗は `Retry-After`（秒、切り上げ）、設定の不足はログに `warn`、想定外の失敗は報告先へ
  * - すべての応答に `cache-control: no-store` と相関の ID
  */
 export function failureResponse(e: unknown, options: FailureResponseOptions = {}): Response {
   const failure = failureOf(e);
-  const context: ErrorContext = { ...options.context, ...(options.requestId && { requestId: options.requestId }), status: failure.status };
+  const requestId = options.requestId ?? undefined;
+  const context: ErrorContext = { ...options.context, ...(options.requestId !== undefined && { requestId: options.requestId }), status: failure.status };
   if (failure.code === 'internal') {
     const reported = reportSafely(options.reporter ?? jsonLogReporter, e, context);
     if (options.defer) options.defer(reported);
@@ -59,7 +65,8 @@ export function failureResponse(e: unknown, options: FailureResponseOptions = {}
     log('warn', failure.code, { ...context, error: e });
   }
   const headers = new Headers({ 'content-type': 'application/json', 'cache-control': 'no-store' });
-  if (options.requestId) headers.set(REQUEST_ID_HEADER, options.requestId);
+  if (requestId) headers.set(REQUEST_ID_HEADER, requestId);
   if (failure.code === 'unavailable') headers.set('retry-after', String(Math.ceil(failure.retryAfterSec)));
-  return new Response(JSON.stringify({ error: failure.code, ...(options.requestId && { requestId: options.requestId }) }), { status: failure.status, headers });
+  const body = options.body ? options.body({ failure, requestId, error: e }) : { error: failure.code, ...(requestId && { requestId }) };
+  return new Response(JSON.stringify(body), { status: failure.status, headers });
 }

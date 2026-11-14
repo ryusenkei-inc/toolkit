@@ -1,7 +1,7 @@
 {
   "name": "@ryusenkei/web",
   "version": "0.5.0",
-  "description": "小さなプロダクトの実行時のライブラリ（エラーと応答、フォーム、法務の本文、メール、Cloudflare・Turnstile・Access の実装）",
+  "description": "Web の製品の実行時のライブラリ（HTTP の失敗の応答、フォーム、法務の本文、メール、Cloudflare・Turnstile・Access の実装）",
   "license": "MIT",
   "author": "RYUSENKEI",
   "repository": {
@@ -12,11 +12,11 @@
   "homepage": "https://github.com/ryusenkei-inc/toolkit/tree/main/packages/web",
   "type": "module",
   "sideEffects": false,
-  "types": "./dist/core/index.d.ts",
+  "types": "./dist/http/index.d.ts",
   "exports": {
     ".": {
-      "types": "./dist/core/index.d.ts",
-      "default": "./dist/core/index.js"
+      "types": "./dist/http/index.d.ts",
+      "default": "./dist/http/index.js"
     },
     "./form": {
       "types": "./dist/form/index.d.ts",
@@ -70,6 +70,9 @@
     "build": "tsc -p tsconfig.build.json",
     "prepublishOnly": "pnpm run build",
     "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@ryusenkei/core": "workspace:^"
   },
   "devDependencies": {
     "typescript": "^5.9.3"

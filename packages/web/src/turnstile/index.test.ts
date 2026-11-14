@@ -1,4 +1,4 @@
-import { ConfigError, TransientError } from '../core/index.ts';
+import { ConfigError, TransientError } from '@ryusenkei/core';
 import { describe, expect, it } from 'vitest';
 import { TURNSTILE_TEST_KEYS, turnstileBotCheck } from './index.ts';
 

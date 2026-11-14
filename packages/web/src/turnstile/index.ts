@@ -1,4 +1,4 @@
-import { ConfigError, err, ok, TransientError, type Result } from '../core/index.ts';
+import { ConfigError, err, ok, TransientError, type Result } from '@ryusenkei/core';
 
 const SITEVERIFY = 'https://challenges.cloudflare.com/turnstile/v0/siteverify';
 // トークンの上限の長さ（これを超えるものは判定の API に送らずに拒否）

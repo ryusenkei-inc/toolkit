@@ -1,6 +1,7 @@
 // フォームの受け取りの処理（Web 標準の Request → Response。Workers、Vercel、Astro、Hono で使える）
 // 順: 検査 → 回数の制限 → bot の判定 → 届け先（検査を先にし、正しい送信だけを数える）
-import { classifyFailure, failureResponse, log, withRequestId, type ErrorReporter, type Result } from '../core/index.ts';
+import { classifyFailure, log, type ErrorReporter, type Result } from '@ryusenkei/core';
+import { failureResponse, withRequestId } from '../http/index.ts';
 import type { MailAddress, Mailer } from '../mail/index.ts';
 import { parseForm, type Form, type FormValues } from './index.ts';
 

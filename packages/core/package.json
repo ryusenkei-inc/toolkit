@@ -1,0 +1,42 @@
+{
+  "name": "@ryusenkei/core",
+  "version": "0.2.2",
+  "description": "実行環境に依らない基盤（Result、基盤の失敗の分類、構造化ログ、エラーの報告）。Workers、Node、Vercel、CLI で使う",
+  "license": "MIT",
+  "author": "RYUSENKEI",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ryusenkei-inc/toolkit.git",
+    "directory": "packages/core"
+  },
+  "homepage": "https://github.com/ryusenkei-inc/toolkit/tree/main/packages/core",
+  "type": "module",
+  "sideEffects": false,
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./context": {
+      "types": "./dist/context/index.d.ts",
+      "default": "./dist/context/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "prepublishOnly": "pnpm run build",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.1",
+    "typescript": "^5.9.3"
+  }
+}

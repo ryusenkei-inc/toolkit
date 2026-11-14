@@ -23,13 +23,35 @@ export function serializeError(e: unknown, depth = 0): SerializedError {
   return { ...own, name: e.name, message: e.message.slice(0, MESSAGE_MAX), ...(stack && { stack }), ...(cause && { cause }) };
 }
 
+/** ログの各行に足す文脈の項目を返す関数（実行中の要求の traceId など） */
+export type LogContextProvider = () => Readonly<Record<string, unknown>> | undefined;
+
+let contextOf: LogContextProvider | undefined;
+
+/**
+ * ログの各行に足す文脈の項目を登録する（`undefined` で解除）
+ * - 行を書くたびに呼ぶ。要求ごとの値は、呼ばれた時点の実行の文脈（AsyncLocalStorage など）から返す
+ * - 登録は1つだけで、後の登録が前の登録を置き換える
+ * - 呼ぶ側の項目が文脈の項目より優先する
+ */
+export function setLogContext(provider: LogContextProvider | undefined): void {
+  contextOf = provider;
+}
+
 /**
  * 構造化ログ（1行の JSON）。事象は `event` のコードで表し、文言を書かない
  * - Workers のログは JSON の行をフィールドに分解して保存する
  * - 項目の中の `Error` は `serializeError` の形にする
+ * - `setLogContext` の文脈の項目を足す（文脈の関数の例外は無視して行を書く）
  * - 入力の本文やメールアドレスなどの個人情報は項目に入れない（呼ぶ側の責任）
  */
 export function log(level: LogLevel, event: string, fields: Record<string, unknown> = {}): void {
-  const line = JSON.stringify({ ...fields, level, event }, (_key, value: unknown) => (value instanceof Error ? serializeError(value) : value));
+  let context: Readonly<Record<string, unknown>> | undefined;
+  try {
+    context = contextOf?.();
+  } catch {
+    context = undefined;
+  }
+  const line = JSON.stringify({ ...context, ...fields, level, event }, (_key, value: unknown) => (value instanceof Error ? serializeError(value) : value));
   console[level](line);
 }

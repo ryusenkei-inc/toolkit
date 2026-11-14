@@ -1,4 +1,4 @@
-import { ConfigError, TransientError } from '../core/index.ts';
+import { ConfigError, TransientError } from '@ryusenkei/core';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { accessAuthenticator } from './index.ts';
 
@@ -43,12 +43,12 @@ const make = (fetch: typeof globalThis.fetch = certs(), now = () => NOW_MS) => a
 
 describe('accessAuthenticator', () => {
   it('正しいトークンは利用者を返し、メールアドレスは小文字にする', async () => {
-    expect(await make().authenticate(request(await sign(claims)))).toEqual({ ok: true, value: { kind: 'user', subject: 'user-1', email: 'user@example.com', groups: [] } });
+    expect(await make().authenticate(request(await sign(claims)))).toEqual({ ok: true, value: { kind: 'user', subject: 'user-1', email: 'user@example.com', groups: [], claims } });
   });
 
   it('サービストークンは service:<クライアントの ID>', async () => {
     const token = await sign({ aud: [AUD], iss: ISS, sub: '', common_name: 'abc.access', exp: NOW + 600 });
-    expect(await make().authenticate(request(token))).toEqual({ ok: true, value: { kind: 'service', subject: 'service:abc.access', email: undefined, groups: [] } });
+    expect(await make().authenticate(request(token))).toMatchObject({ ok: true, value: { kind: 'service', subject: 'service:abc.access', email: undefined, groups: [], claims: { common_name: 'abc.access' } } });
   });
 
   it('aud・iss・期限・署名・kid・alg・email_verified の誤りと、形の崩れは unauthenticated', async () => {
@@ -74,6 +74,16 @@ describe('accessAuthenticator', () => {
     expect((await auth.authenticate(request(await sign(claims)))).ok).toBe(true);
     expect((await auth.authenticate(request(await sign({ ...claims, aud: 'first' })))).ok).toBe(true);
     expect(await auth.authenticate(request(await sign({ ...claims, aud: ['other'] })))).toEqual({ ok: false, error: 'unauthenticated' });
+  });
+
+  it('header で読むヘッダーを選べる', async () => {
+    const token = await sign(claims);
+    const auth = accessAuthenticator({ team: TEAM, aud: AUD, header: ['cf-access-jwt-assertion', 'x-operator-access-jwt'], fetch: certs(), now: () => NOW_MS });
+    const viaOperator = new Request('https://app.example.com/', { headers: { 'x-operator-access-jwt': token } });
+    expect((await auth.authenticate(viaOperator)).ok).toBe(true);
+    const bearer = accessAuthenticator({ team: TEAM, aud: AUD, header: 'authorization', fetch: certs(), now: () => NOW_MS });
+    expect((await bearer.authenticate(new Request('https://app.example.com/', { headers: { authorization: `Bearer ${token}` } }))).ok).toBe(true);
+    expect((await bearer.authenticate(request(token))).ok).toBe(false);
   });
 
   it('時計のずれは60秒まで許す', async () => {

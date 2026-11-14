@@ -1,4 +1,4 @@
-import { ok } from '../core/index.ts';
+import { ok } from '@ryusenkei/core';
 import { validateMail, type Mail, type Mailer } from './index.ts';
 
 /** 送ったメールを `outbox` に溜めるメモリの実装（テストと dev 用） */
