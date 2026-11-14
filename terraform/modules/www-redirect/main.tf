@@ -45,7 +45,7 @@ locals {
 # この phase の ruleset はゾーンに1つしか持てない。会社のゾーンを共有するプロダクトでは使わない
 resource "cloudflare_ruleset" "redirect" {
   zone_id = var.zone_id
-  name    = "${var.domain} の www の転送"
+  name    = coalesce(var.ruleset_name, "${var.domain} の www の転送")
   kind    = "zone"
   phase   = "http_request_dynamic_redirect"
   rules = concat(
