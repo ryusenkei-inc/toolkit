@@ -137,6 +137,36 @@ describe('アダプター', () => {
     expect(store.removeRequest()).toMatchObject({ method: 'DELETE', url: 'https://acc.r2.cloudflarestorage.com/state/site/deploy.lock' });
   });
 
+  it('R2: 圧縮させず、弱い ETag は強い形で比べる（解放と古いロックの上書き）', async () => {
+    // gzip で返したときの R2: GET の ETag は W/ 付き、PUT は強い ETag、If-Match の W/ は412
+    let etag: string | null = null;
+    let content = '';
+    const { calls, fetcher } = recorder((c) => {
+      if (c.method === 'GET') return etag === null ? new Response(null, { status: 404 }) : new Response(content, { headers: { etag: `W/${etag}` } });
+      if (c.method === 'DELETE') return (etag = null), new Response(null, { status: 204 });
+      const ifMatch = c.headers['if-match'];
+      if (ifMatch?.startsWith('W/') || (ifMatch !== undefined && ifMatch !== etag) || (c.headers['if-none-match'] === '*' && etag !== null)) return new Response(null, { status: 412 });
+      content = c.body ?? '';
+      etag = `"v${calls.length}"`;
+      return new Response(null, { headers: { etag } });
+    });
+    const store = r2LockStore({ accountId: 'acc', bucket: 'b', key: 'k', credentials: { accessKeyId: 'id', secretAccessKey: 's' }, fetch: fetcher });
+    const now = Date.parse('2026-11-15T12:00:00Z');
+    const first = await acquireDeployLock(store, { owner: 'a', now: () => now, releaseOnExit: false });
+    expect(first.kind).toBe('acquired');
+    expect(calls.every((c) => c.headers['accept-encoding'] === 'identity')).toBe(true);
+    if (first.kind === 'acquired') await first.lock.release();
+    expect(etag).toBeNull();
+
+    // 古いロックの上書き（応答が弱い ETag でも、If-Match は強い形）
+    etag = '"old"';
+    content = JSON.stringify({ owner: 'b', at: new Date(now - DEFAULT_STALE_MS - 1).toISOString() });
+    const weak = recorder((c) => (c.method === 'GET' ? new Response(content, { headers: { etag: 'W/"old"' } }) : c.headers['if-match'] === '"old"' ? new Response(null, { headers: { etag: '"new"' } }) : new Response(null, { status: 412 })));
+    const stale = await acquireDeployLock(r2LockStore({ accountId: 'acc', bucket: 'b', key: 'k', credentials: { accessKeyId: 'id', secretAccessKey: 's' }, fetch: weak.fetcher }), { owner: 'a', now: () => now, releaseOnExit: false });
+    expect(stale.kind).toBe('acquired');
+    expect(weak.calls[1]!.headers['if-match']).toBe('"old"');
+  });
+
   it('GCS: generation を版にし、作るときは ifGenerationMatch=0', async () => {
     const { calls, fetcher } = recorder((c) =>
       c.method === 'GET' ? new Response(null, { status: 404 }) : c.method === 'POST' ? Response.json({ generation: '17' }) : new Response(null, { status: 204 }),

@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.4.1
+
+### Fixed
+
+- `r2LockStore`: `release()` now removes the lock, and a stale lock can be overwritten. R2 returned a weak ETag (`W/"…"`) for gzip responses, which never matched the version from the write and was rejected in `If-Match`. Requests now send `Accept-Encoding: identity`, and versions are compared without `W/`. A `fetch` replacement that worked around this is no longer needed.
+
 ## 0.4.0
 
 Depends on `@ryusenkei/core` 0.5 for its error types. Arguments now follow one rule: required arguments are positional, optional settings go in a trailing options object, clocks are `now: () => number`, and `fetch` replacements are named `fetch`. A function name ending in `Sync` blocks; the others return a `Promise`.

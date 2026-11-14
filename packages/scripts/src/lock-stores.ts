@@ -10,6 +10,8 @@ export type S3Credentials = Readonly<{ accessKeyId: string; secretAccessKey: str
 
 const sha256 = (data: string) => createHash('sha256').update(data).digest('hex');
 const hmac = (key: string | Buffer, data: string) => createHmac('sha256', key).update(data).digest();
+// R2 は gzip で返す応答の ETag を弱い形（`W/"…"`）にし、`If-Match` の弱い ETag を412で拒む。比べるのは強い形
+const strongEtag = (etag: string | null) => (etag ?? '').replace(/^W\//, '');
 const encodePath = (key: string) => key.split('/').map((s) => encodeURIComponent(s).replace(/[!'()*]/g, (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`)).join('/');
 
 /**
@@ -54,27 +56,28 @@ export type R2LockStoreOptions = Readonly<{
 /**
  * R2 のオブジェクトのロック（S3 互換の API）
  * - 版は ETag。作るときは `If-None-Match: *`、上書きは `If-Match`。条件が合わない応答（412、409）は `null`
+ * - 圧縮させない（`Accept-Encoding: identity`）。gzip の応答の ETag は弱い形になり、書いたときの ETag と一致しない
  */
 export function r2LockStore(options: R2LockStoreOptions): LockStore {
   const fetcher = options.fetch ?? fetch;
   const endpoint = (options.endpoint ?? `https://${options.accountId}.r2.cloudflarestorage.com`).replace(/\/$/, '');
   const url = `${endpoint}/${encodeURIComponent(options.bucket)}/${encodePath(options.key)}`;
   const request = (method: string, body?: string, extra?: Record<string, string>) => signS3Request({ method, url, credentials: options.credentials, ...(body !== undefined && { body }), ...(extra && { extra }) });
-  const send = (r: HttpRequestInit, body?: string) => sendOrThrow('ロックの置き場所（R2）', () => fetcher(r.url, { method: r.method, headers: r.headers, ...(body !== undefined && { body }), signal: AbortSignal.timeout(15_000) }));
+  const send = (r: HttpRequestInit, body?: string) => sendOrThrow('ロックの置き場所（R2）', () => fetcher(r.url, { method: r.method, headers: { ...r.headers, 'accept-encoding': 'identity' }, ...(body !== undefined && { body }), signal: AbortSignal.timeout(15_000) }));
   return {
     name: `r2://${options.bucket}/${options.key}`,
     async read(): Promise<StoredLock | null> {
       const res = await send(request('GET'));
       if (res.status === 404) return null;
       if (!res.ok) throw await httpFailure(res, 'lock_read_failed', 'ロックの読み込みの失敗');
-      return { content: await res.text(), version: res.headers.get('etag') ?? '' };
+      return { content: await res.text(), version: strongEtag(res.headers.get('etag')) };
     },
     async write(content, ifVersion) {
-      const condition: Record<string, string> = ifVersion === null ? { 'if-none-match': '*' } : { 'if-match': ifVersion };
+      const condition: Record<string, string> = ifVersion === null ? { 'if-none-match': '*' } : { 'if-match': strongEtag(ifVersion) };
       const res = await send(request('PUT', content, { 'content-type': 'application/json', ...condition }), content);
       if (res.status === 412 || res.status === 409) return null;
       if (!res.ok) throw await httpFailure(res, 'lock_write_failed', 'ロックの書き込みの失敗');
-      return res.headers.get('etag') ?? '';
+      return strongEtag(res.headers.get('etag'));
     },
     async remove() {
       const res = await send(request('DELETE'));
