@@ -6,7 +6,7 @@ on:
   workflow_call:
     inputs:
       checks:
-        description: test の後、公開の前に実行するコマンド（例: 版とタグの一致）
+        description: 'test の後、公開の前に実行するコマンド（例: 版とタグの一致）'
         type: string
         default: ''
       goreleaser-version:
