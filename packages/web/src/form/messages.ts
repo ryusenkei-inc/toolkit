@@ -29,14 +29,22 @@ export const FORM_MESSAGES_JA: Readonly<Record<FormMessageCode, string>> = {
 /** 文言の上書き（製品ごとの言い回し、`refine` の独自のコード） */
 export type FormMessages = Readonly<Partial<Record<string, string>>>;
 
+export type FormMessageOptions = Readonly<{
+  /** 文言に差し込む値（`{max}` など） */
+  params?: Problem['params'];
+  /** 文言の上書き */
+  messages?: FormMessages;
+}>;
+
 /**
  * コードの文言。上書き、標準の文言の順に引き、どちらにもなければコードを返す
  * - `{name}` は `params` の同じ名前の値に置き換える
  */
-export function formMessage(code: string, params: Problem['params'] = {}, messages: FormMessages = {}): string {
+export function formMessage(code: string, options: FormMessageOptions = {}): string {
+  const { params = {}, messages = {} } = options;
   const template = messages[code] ?? (FORM_MESSAGES_JA as Readonly<Record<string, string>>)[code] ?? code;
   return template.replace(/\{(\w+)\}/g, (whole, key: string) => (Object.hasOwn(params, key) ? String(params[key]) : whole));
 }
 
 /** 検査の問題の文言 */
-export const problemMessage = (problem: Problem, messages: FormMessages = {}): string => formMessage(problem.code, problem.params, messages);
+export const problemMessage = (problem: Problem, options: Readonly<{ messages?: FormMessages }> = {}): string => formMessage(problem.code, { ...(problem.params && { params: problem.params }), ...(options.messages && { messages: options.messages }) });

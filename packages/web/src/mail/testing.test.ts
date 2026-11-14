@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { isEmailAddress, validateMail } from './index.ts';
+import { mailerContract } from './contract.ts';
 import { memoryMailer } from './testing.ts';
 
 const mail = { from: { email: 'noreply@example.com', name: 'Site' }, to: [{ email: 'owner@example.com' }], subject: '問い合わせ', text: '本文' };
@@ -28,4 +29,9 @@ describe('memoryMailer', () => {
     expect(await mailer.send({ ...mail, subject: 'a\nb' })).toEqual({ ok: false, error: 'invalid_input' });
     expect(mailer.outbox).toEqual([mail]);
   });
+});
+
+mailerContract('memoryMailer', () => {
+  const mailer = memoryMailer();
+  return { mailer, sentCount: () => mailer.outbox.length };
 });

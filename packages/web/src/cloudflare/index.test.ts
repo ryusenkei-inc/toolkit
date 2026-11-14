@@ -1,6 +1,8 @@
 // binding の偽物で、結果とエラーの変換を検査（Workers の実行環境での検査は別）
 import { ConfigError, TransientError } from '@ryusenkei/core';
 import { describe, expect, it } from 'vitest';
+import { blobStoreContract } from '../blob/contract.ts';
+import { mailerContract } from '../mail/contract.ts';
 import { cloudflareMailer, cloudflareRateLimiter, r2BlobStore, type R2BucketBinding, type SendEmailBinding } from './index.ts';
 
 const fakeRateLimit = (limit: number) => {
@@ -32,7 +34,8 @@ describe('cloudflareRateLimiter', () => {
   });
 
   it('binding がなければ ConfigError、binding の例外は TransientError', async () => {
-    await expect(cloudflareRateLimiter(undefined).limit('a')).rejects.toBeInstanceOf(ConfigError);
+    await expect(cloudflareRateLimiter(undefined).limit('a')).rejects.toMatchObject({ name: 'ConfigError', key: 'binding' });
+    await expect(cloudflareRateLimiter(undefined, { name: 'FORM_LIMITER' }).limit('a')).rejects.toMatchObject({ key: 'FORM_LIMITER' });
     await expect(cloudflareRateLimiter({ limit: () => Promise.reject(new Error('x')) }).limit('a')).rejects.toBeInstanceOf(TransientError);
   });
 
@@ -56,6 +59,7 @@ describe('cloudflareMailer', () => {
 
   it('binding がなければ ConfigError、エラーコードを分類', async () => {
     await expect(cloudflareMailer(undefined).send(mail)).rejects.toBeInstanceOf(ConfigError);
+    await expect(cloudflareMailer(undefined, { name: 'EMAIL' }).send(mail)).rejects.toMatchObject({ key: 'EMAIL' });
     const send = (code: string) => cloudflareMailer(fakeEmail(code)).send(mail);
     await expect(send('E_RATE_LIMIT_EXCEEDED')).rejects.toBeInstanceOf(TransientError);
     await expect(send('E_SENDER_NOT_VERIFIED')).rejects.toBeInstanceOf(ConfigError);
@@ -92,6 +96,12 @@ const fakeBucket = () => {
   return Object.assign(bucket, { deletes, objects });
 };
 
+blobStoreContract('r2BlobStore', () => r2BlobStore(fakeBucket()));
+mailerContract('cloudflareMailer', () => {
+  const binding = fakeEmail();
+  return { mailer: cloudflareMailer(binding), sentCount: () => binding.sent.length };
+});
+
 describe('r2BlobStore', () => {
   it('保存した本文と Content-Type を取得し、ないキーは null', async () => {
     const store = r2BlobStore(fakeBucket());
@@ -120,6 +130,7 @@ describe('r2BlobStore', () => {
 
   it('binding がなければ ConfigError、binding の例外は TransientError', async () => {
     await expect(r2BlobStore(undefined).exists('a')).rejects.toBeInstanceOf(ConfigError);
+    await expect(r2BlobStore(undefined, { name: 'FILES' }).exists('a')).rejects.toMatchObject({ key: 'FILES' });
     const broken = { ...fakeBucket(), head: () => Promise.reject(new Error('x')) };
     await expect(r2BlobStore(broken).exists('a')).rejects.toBeInstanceOf(TransientError);
   });

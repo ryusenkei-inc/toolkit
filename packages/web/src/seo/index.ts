@@ -1,6 +1,7 @@
 // 検索エンジン向けの値: 正規の URL、メタタグ、JSON-LD、sitemap、robots.txt
 // - 見た目を持たない。返すのはデータと HTML・XML・テキストの文字列で、head への差し込みは使う側のフレームワーク
 // - サイトの名前や組織の値は使う側が渡す
+import { UsageError } from '@ryusenkei/core';
 
 /** オリジン（`https://example.com`）か、サイトの URL */
 export type Origin = string | URL;
@@ -264,7 +265,7 @@ const NS = 'http://www.sitemaps.org/schemas/sitemap/0.9';
 /**
  * sitemap の XML（sitemaps.org の形式）
  * - 同じ `loc` は最初の1件だけ残す。並びは渡した順
- * - 上限（`SITEMAP_MAX_URLS`）を超えたら例外。分けるときは `sitemapIndexXml`
+ * - 上限（`SITEMAP_MAX_URLS`）を超えたら `UsageError`（`sitemap_too_large`）。分けるときは `sitemapIndexXml`
  */
 export function sitemapXml(entries: readonly SitemapEntry[], options: Readonly<{ origin?: Origin }> = {}): string {
   const seen = new Set<string>();
@@ -279,7 +280,7 @@ export function sitemapXml(entries: readonly SitemapEntry[], options: Readonly<{
     if (e.priority !== undefined) parts.push(`<priority>${e.priority.toFixed(1)}</priority>`);
     urls.push(`  <url>${parts.join('')}</url>`);
   }
-  if (urls.length > SITEMAP_MAX_URLS) throw new Error(`sitemap_too_large: ${urls.length}`);
+  if (urls.length > SITEMAP_MAX_URLS) throw new UsageError('sitemap_too_large', `sitemap の URL が上限を超えた: ${urls.length}`);
   return [XML_HEAD, `<urlset xmlns="${NS}">`, ...urls, '</urlset>', ''].join('\n');
 }
 

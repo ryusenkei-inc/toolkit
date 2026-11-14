@@ -48,13 +48,13 @@ describe('visitorKey', () => {
 
 describe('memoryAnalytics', () => {
   it('日と項目で分けて数え、絞り込みと値の種類の数を返す', async () => {
-    let now = new Date('2026-11-13T15:30:00Z'); // 日本時間の 11-14
+    let now = Date.parse('2026-11-13T15:30:00Z'); // 日本時間の 11-14
     const store = memoryAnalytics(schema, { now: () => now });
     store.record({ event: 'view', page: 'top', visitor: 'a' });
     store.record({ event: 'view', page: 'top', visitor: 'a' });
     store.record({ event: 'view', page: 'list', visitor: 'b' });
     store.record({ event: 'copy', page: 'top', visitor: 'a', price: 100 });
-    now = new Date('2026-11-14T15:30:00Z'); // 日本時間の 11-15
+    now = Date.parse('2026-11-14T15:30:00Z'); // 日本時間の 11-15
     store.record({ event: 'view', visitor: 'c' });
     expect(store.events).toHaveLength(5);
 
@@ -68,7 +68,7 @@ describe('memoryAnalytics', () => {
   });
 
   it('名前で書いた index の項目で分け、絞り込む', async () => {
-    const store = memoryAnalytics(defineEventSchema({ blobs: ['event'], index: 'subject' }), { now: () => new Date('2026-11-14T03:00:00Z') });
+    const store = memoryAnalytics(defineEventSchema({ blobs: ['event'], index: 'subject' }), { now: () => Date.parse('2026-11-14T03:00:00Z') });
     store.record({ event: 'click', subject: '4901234567894' });
     store.record({ event: 'click', subject: '4901234567894' });
     store.record({ event: 'click', subject: '4512345678907' });
@@ -86,7 +86,7 @@ describe('memoryAnalytics', () => {
 describe('sendEvent', () => {
   it('sendBeacon で JSON を送り、使えなければ keepalive の fetch', () => {
     const beacon = vi.fn(() => true);
-    vi.stubGlobal('window', {});
+    vi.stubGlobal('document', {});
     vi.stubGlobal('navigator', { sendBeacon: beacon, webdriver: false });
     sendEvent('/api/events', { event: 'view' });
     expect(beacon).toHaveBeenCalledWith('/api/events', '{"event":"view"}');
@@ -102,7 +102,7 @@ describe('sendEvent', () => {
     const beacon = vi.fn(() => true);
     vi.stubGlobal('navigator', { sendBeacon: beacon, webdriver: false });
     sendEvent('/api/events', {});
-    vi.stubGlobal('window', {});
+    vi.stubGlobal('document', {});
     vi.stubGlobal('navigator', { sendBeacon: beacon, webdriver: true });
     sendEvent('/api/events', {});
     expect(beacon).not.toHaveBeenCalled();

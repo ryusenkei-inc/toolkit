@@ -109,8 +109,9 @@ describe('minLength と requiredWhen', () => {
 describe('文言の辞書', () => {
   it('標準の文言に params を差し込み、上書きを優先し、知らないコードはそのまま', () => {
     expect(problemMessage({ path: 'message', code: 'too_short', params: { min: 10 } })).toBe('10文字以上で入力してください');
-    expect(problemMessage({ path: 'url', code: 'url_host' }, { url_host: 'サイトの記事の URL を入力してください' })).toBe('サイトの記事の URL を入力してください');
+    expect(problemMessage({ path: 'url', code: 'url_host' }, { messages: { url_host: 'サイトの記事の URL を入力してください' } })).toBe('サイトの記事の URL を入力してください');
     expect(formMessage('custom_rule')).toBe('custom_rule');
     expect(formMessage('rate_limited')).toBe(FORM_MESSAGES_JA.rate_limited);
+    expect(formMessage('too_long', { params: { max: 5 }, messages: { too_long: '{max}字まで' } })).toBe('5字まで');
   });
 });

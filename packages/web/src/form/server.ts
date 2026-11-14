@@ -1,18 +1,22 @@
 // フォームの受け取りの処理（Web 標準の Request → Response。Workers、Vercel、Astro、Hono で使える）
 // 順: 検査 → 回数の制限 → bot の判定 → 届け先（検査を先にし、正しい送信だけを数える）
 import { classifyFailure, ConfigError, log, type ErrorReporter, type Result } from '@ryusenkei/core';
-import { failureResponse, withRequestId } from '../http/index.ts';
+import { failureResponse, REQUEST_ID_HEADER, withRequestId } from '../http/index.ts';
 import type { MailAddress, Mailer } from '../mail/index.ts';
 import { signWebhook, type WebhookScheme, type WebhookSecrets } from '../webhook/index.ts';
 import { parseForm, type Form, type FormValues } from './index.ts';
 
-/** bot の判定（`@ryusenkei/web/turnstile` の `turnstileBotCheck` が満たす） */
-export type BotCheckLike = Readonly<{
-  verify(input: { token: string | null | undefined; remoteIp?: string; action?: string }): Promise<Result<void, string>>;
-}>;
+/** bot の判定に渡す値 */
+export type BotCheckInput = Readonly<{ token: string | null | undefined; remoteIp?: string; action?: string }>;
 
-/** 回数の制限（`@ryusenkei/web/cloudflare` の `cloudflareRateLimiter` が満たす） */
-export type RateLimiterLike = Readonly<{ limit(key: string): Promise<Result<void, string>> }>;
+/**
+ * bot の判定のポート（`@ryusenkei/web/turnstile` の `turnstileBotCheck` が実装）
+ * - 業務の失敗は `E` のコードで返し、判定の API の障害は `TransientError`、設定の不足は `ConfigError` を投げる
+ */
+export type BotCheck<E extends string = string> = Readonly<{ verify(input: BotCheckInput): Promise<Result<void, E>> }>;
+
+/** キー（IP アドレスなど）ごとの回数の制限のポート（`@ryusenkei/web/cloudflare` の `cloudflareRateLimiter` が実装） */
+export type RateLimiter<E extends string = string> = Readonly<{ limit(key: string): Promise<Result<void, E>> }>;
 
 /** 受け取った送信。`order` は宣言の項目の順 */
 export type Submission = Readonly<{ form: string; values: FormValues; order: readonly string[]; receivedAt: string }>;
@@ -32,8 +36,10 @@ export type SubmissionHandlerOptions = {
   destinations: readonly Destination[];
   /** 受付の応答に入れる `id` を、届け先の結果（届け先の名前ごと）から選ぶ（保存先が返した受付の番号など） */
   acceptedId?: (results: Readonly<Record<string, DeliveryResult>>) => string | null | undefined;
-  rateLimiter?: RateLimiterLike;
-  botCheck?: BotCheckLike;
+  rateLimiter?: RateLimiter;
+  /** 回数の制限のキー（既定は `form:<送信元の IP アドレス>`、IP アドレスがなければ `form:unknown`） */
+  rateLimitKey?: (input: Readonly<{ ip: string | undefined; form: string }>) => string;
+  botCheck?: BotCheck;
   /** bot の判定のトークンの項目（既定は Turnstile の `cf-turnstile-response`） */
   botTokenField?: string;
   /** bot の判定で照合する action */
@@ -43,7 +49,8 @@ export type SubmissionHandlerOptions = {
   /** 本文の上限（バイト、既定は `64 KiB`） */
   maxBodyBytes?: number;
   reporter?: ErrorReporter;
-  now?: () => Date;
+  /** 今の時刻（ミリ秒）を返す関数（既定は `Date.now`） */
+  now?: () => number;
 };
 
 const DEFAULT_MAX_BODY_BYTES = 64 * 1024;
@@ -51,7 +58,7 @@ const DEFAULT_MAX_BODY_BYTES = 64 * 1024;
 const defaultClientIp = (request: Request) => request.headers.get('cf-connecting-ip') ?? request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? undefined;
 
 const json = (body: unknown, status: number, requestId: string, headers: Record<string, string> = {}) =>
-  new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json', 'cache-control': 'no-store', 'x-request-id': requestId, ...headers } });
+  new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json', 'cache-control': 'no-store', [REQUEST_ID_HEADER]: requestId, ...headers } });
 
 async function readBody(request: Request, maxBytes: number): Promise<FormData | Record<string, unknown> | 'too_large' | 'invalid'> {
   const declared = Number(request.headers.get('content-length') ?? 0);
@@ -86,7 +93,8 @@ async function readBody(request: Request, maxBytes: number): Promise<FormData | 
 export function submissionHandler(options: SubmissionHandlerOptions): (request: Request, ctx?: { waitUntil?(promise: Promise<unknown>): void }) => Promise<Response> {
   const formNames = Object.keys(options.forms);
   const formField = options.formField ?? 'form';
-  const now = options.now ?? (() => new Date());
+  const now = options.now ?? Date.now;
+  const rateLimitKey = options.rateLimitKey ?? (({ ip }) => `form:${ip ?? 'unknown'}`);
   return async (incoming, ctx) => {
     const { request, requestId } = withRequestId(incoming);
     if (request.method !== 'POST') return json({ ok: false, error: 'method_not_allowed', requestId }, 405, requestId, { allow: 'POST' });
@@ -109,7 +117,7 @@ export function submissionHandler(options: SubmissionHandlerOptions): (request: 
 
       const ip = (options.clientIp ?? defaultClientIp)(request);
       if (options.rateLimiter) {
-        const limited = await options.rateLimiter.limit(`form:${ip ?? 'unknown'}`);
+        const limited = await options.rateLimiter.limit(rateLimitKey({ ip, form: name }));
         if (!limited.ok) return json({ ok: false, error: 'rate_limited', requestId }, 429, requestId);
       }
       if (options.botCheck) {
@@ -117,7 +125,7 @@ export function submissionHandler(options: SubmissionHandlerOptions): (request: 
         if (!human.ok) return json({ ok: false, error: 'bot_check_failed', requestId }, 403, requestId);
       }
 
-      const submission: Submission = { form: name, values: parsed.values, order: Object.keys(form.fields), receivedAt: now().toISOString() };
+      const submission: Submission = { form: name, values: parsed.values, order: Object.keys(form.fields), receivedAt: new Date(now()).toISOString() };
       const results = await Promise.all(
         options.destinations.map(async (d) => {
           try {
@@ -165,6 +173,8 @@ export function notificationText(submission: Submission, copy: NotificationCopy)
 
 export type MailDestinationOptions = {
   mailer: Mailer;
+  /** 届け先の名前（既定は `mail`。複数のメールの届け先を送り分けるときに付ける） */
+  name?: string;
   from: MailAddress;
   to: MailAddress | readonly MailAddress[];
   subject: (submission: Submission) => string;
@@ -178,7 +188,7 @@ const defaultReplyTo = (s: Submission): MailAddress | undefined => (s.values.ema
 /** メールで届ける（返信すると送信した人に届く） */
 export function mailDestination(options: MailDestinationOptions): Destination {
   return {
-    name: 'mail',
+    name: options.name ?? 'mail',
     async deliver(submission) {
       const replyTo = (options.replyTo ?? defaultReplyTo)(submission);
       return options.mailer.send({
@@ -199,12 +209,13 @@ export type WebhookDestinationOptions = {
   /**
    * 署名の鍵（`@ryusenkei/web/webhook` の `signWebhook`）。既定の形式はヘッダー `x-signature: t=<秒>,v1=<署名>`
    * - 配列は鍵の入れ替えの間に使い、鍵ごとの `v1` を並べる（新しい鍵を先に）
+   * - 署名しないときは項目ごと省く。項目があって値が空（未設定の環境変数など）なら `ConfigError`
    */
-  secret?: WebhookSecrets;
+  secret?: WebhookSecrets | undefined;
   /** 署名のヘッダーの名前（既定は `x-signature`） */
-  signatureHeader?: string;
+  header?: string;
   /** 署名の形式（既定は `requestScheme`） */
-  signatureScheme?: WebhookScheme;
+  scheme?: WebhookScheme;
   /** 本文の形（`json` は値をそのまま、`slack` は通知の本文の `text`） */
   format?: 'json' | 'slack';
   /** `slack` のときの本文の文言 */
@@ -223,14 +234,16 @@ const DEFAULT_WEBHOOK_TIMEOUT_MS = 3000;
  */
 export function webhookDestination(options: WebhookDestinationOptions): Destination {
   const fetcher = options.fetch ?? fetch;
+  const signed = Object.hasOwn(options, 'secret');
   const secrets = (typeof options.secret === 'string' ? [options.secret] : (options.secret ?? [])).filter((s) => s);
   return {
     name: options.name ?? 'webhook',
     async deliver(submission) {
+      if (signed && !secrets.length) throw new ConfigError('webhook の署名の鍵が未設定', { key: 'secret' });
       const payload = options.format === 'slack' ? { text: notificationText(submission, options.copy ?? { labels: {} }) } : { event: 'form.submitted', id: crypto.randomUUID(), ...submission };
       const body = JSON.stringify(payload);
       const headers: Record<string, string> = { 'content-type': 'application/json' };
-      if (secrets.length) headers[options.signatureHeader ?? 'x-signature'] = await signWebhook(secrets, { method: 'POST', url: options.url, body }, { ...(options.signatureScheme && { scheme: options.signatureScheme }) });
+      if (signed) headers[options.header ?? 'x-signature'] = await signWebhook(secrets, { method: 'POST', url: options.url, body }, { ...(options.scheme && { scheme: options.scheme }) });
       const res = await fetcher(options.url, { method: 'POST', headers, body, redirect: 'manual', signal: AbortSignal.timeout(options.timeoutMs ?? DEFAULT_WEBHOOK_TIMEOUT_MS) });
       return res.ok ? { ok: true, value: res.status } : { ok: false, error: `status_${res.status}` };
     },
@@ -263,7 +276,7 @@ export function httpDestination(options: HttpDestinationOptions): Destination {
     async deliver(submission, ctx) {
       if (!options.url) throw new ConfigError('転送先の URL が未設定', { key: 'url' });
       const body = JSON.stringify(options.body ? options.body(submission) : submission.values);
-      const headers = { ...options.headers, 'content-type': 'application/json', 'x-request-id': ctx.requestId };
+      const headers = { ...options.headers, 'content-type': 'application/json', [REQUEST_ID_HEADER]: ctx.requestId };
       const res = await fetcher(options.url, { method: 'POST', headers, body, redirect: 'manual', signal: AbortSignal.timeout(options.timeoutMs ?? DEFAULT_WEBHOOK_TIMEOUT_MS) });
       if (!res.ok) return { ok: false, error: `status_${res.status}` };
       return { ok: true, value: (await res.json().catch(() => null)) as unknown };

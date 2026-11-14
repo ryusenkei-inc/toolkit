@@ -2,6 +2,7 @@
 // - 仕組み（時刻の許容、鍵の入れ替え、本文の読み方）はここ、ヘッダーの名前と署名の形式は使う側の値
 // - 既定の形式 `requestScheme` は、時刻・メソッド・パスとクエリ・主体・本文の SHA-256 を署名する
 import { ConfigError, err, ok, type Result } from '@ryusenkei/core';
+import { decodeBytes as decode, encodeBytes as encode, type ByteEncoding } from '../internal/encoding.ts';
 
 /** 署名の鍵。鍵の入れ替えの間は新しい鍵を先、古い鍵を後に並べる */
 export type WebhookSecrets = string | readonly string[];
@@ -31,7 +32,7 @@ export type WebhookMessage = string | Uint8Array | readonly (string | Uint8Array
  */
 export type WebhookScheme = Readonly<{
   message(input: WebhookMessageInput): WebhookMessage | Promise<WebhookMessage>;
-  encoding?: 'base64url' | 'base64' | 'hex';
+  encoding?: ByteEncoding;
   header?: 'timestamped' | 'plain';
   prefix?: string;
 }>;
@@ -40,8 +41,8 @@ export type WebhookScheme = Readonly<{
 export type WebhookVerifyError = 'signature_missing' | 'signature_expired' | 'signature_mismatch';
 
 export type SignWebhookOptions = Readonly<{
-  /** 今の時刻（ミリ秒） */
-  now?: number;
+  /** 今の時刻（ミリ秒）を返す関数（既定は `Date.now`） */
+  now?: () => number;
   /** 署名の形式（既定は `requestScheme`） */
   scheme?: WebhookScheme;
 }>;
@@ -56,24 +57,6 @@ const enc = new TextEncoder();
 const DEFAULT_TOLERANCE_SEC = 300;
 // 1つのヘッダーで照合する署名の上限（長いヘッダーで照合の回数を増やされないため）
 const MAX_SIGNATURES = 8;
-
-const toBase64 = (bytes: Uint8Array) => btoa(String.fromCharCode(...bytes));
-const base64Url = (bytes: Uint8Array) => toBase64(bytes).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-
-function encode(bytes: Uint8Array, encoding: NonNullable<WebhookScheme['encoding']>): string {
-  if (encoding === 'hex') return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
-  return encoding === 'base64' ? toBase64(bytes) : base64Url(bytes);
-}
-
-function decode(value: string, encoding: NonNullable<WebhookScheme['encoding']>): Uint8Array<ArrayBuffer> | null {
-  try {
-    if (encoding === 'hex') return /^(?:[0-9a-fA-F]{2})+$/.test(value) ? Uint8Array.from(value.match(/../g)!, (h) => parseInt(h, 16)) : null;
-    const b64 = encoding === 'base64url' ? value.replace(/-/g, '+').replace(/_/g, '/') : value;
-    return Uint8Array.from(atob(b64.padEnd(Math.ceil(b64.length / 4) * 4, '=')), (c) => c.charCodeAt(0));
-  } catch {
-    return null;
-  }
-}
 
 const bytesOf = (body: WebhookParts['body']): Uint8Array<ArrayBuffer> => (typeof body === 'string' ? enc.encode(body) : body ? new Uint8Array(body) : new Uint8Array());
 
@@ -97,7 +80,7 @@ function concat(message: WebhookMessage): Uint8Array<ArrayBuffer> {
  */
 export const requestScheme: WebhookScheme = {
   async message({ method, url, subject, body, timestamp }) {
-    const digest = base64Url(new Uint8Array(await crypto.subtle.digest('SHA-256', body)));
+    const digest = encode(new Uint8Array(await crypto.subtle.digest('SHA-256', body)), 'base64url');
     return ['v1', timestamp, method.toUpperCase(), `${url.pathname}${url.search}`, subject, digest].join('\n');
   },
 };
@@ -125,7 +108,7 @@ export async function signWebhook(secret: WebhookSecrets, parts: WebhookParts, o
   const scheme = options.scheme ?? requestScheme;
   const encoding = scheme.encoding ?? 'base64url';
   const secrets = requireSecrets(secret);
-  const t = Math.floor((options.now ?? Date.now()) / 1000);
+  const t = Math.floor((options.now ?? Date.now)() / 1000);
   const message = await messageOf(scheme, parts, t);
   const sign = async (s: string) => encode(new Uint8Array(await crypto.subtle.sign('HMAC', await hmacKey(s, 'sign'), message)), encoding);
   if (scheme.header === 'plain') return `${scheme.prefix ?? ''}${await sign(secrets[0]!)}`;
@@ -164,7 +147,7 @@ export async function verifyWebhook(secret: WebhookSecrets | null | undefined, h
   const { timestamp, signatures } = parseHeader(scheme, header ?? '');
   const timed = scheme.header !== 'plain';
   if (!signatures.length || (timed && timestamp === undefined)) return err('signature_missing');
-  if (timed && Math.abs((options.now ?? Date.now()) / 1000 - timestamp!) > (options.toleranceSec ?? DEFAULT_TOLERANCE_SEC)) return err('signature_expired');
+  if (timed && Math.abs((options.now ?? Date.now)() / 1000 - timestamp!) > (options.toleranceSec ?? DEFAULT_TOLERANCE_SEC)) return err('signature_expired');
   const message = await messageOf(scheme, parts, timestamp ?? 0);
   const decoded = signatures.map((s) => decode(s, encoding)).filter((s) => s !== null);
   for (const s of secrets) {

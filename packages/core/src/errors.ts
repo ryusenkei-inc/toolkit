@@ -6,12 +6,15 @@ const OVERLOADED_RETRY_AFTER_SEC = 10;
 // 判定の印。`instanceof` はパッケージの複製（版の違う core が2つ入る場合）で外れるため、`Symbol.for` の印で判定する
 const TRANSIENT = Symbol.for('@ryusenkei/core.TransientError');
 const CONFIG = Symbol.for('@ryusenkei/core.ConfigError');
+const USAGE = Symbol.for('@ryusenkei/core.UsageError');
 const branded = (e: unknown, brand: symbol) => typeof e === 'object' && e !== null && (e as Record<symbol, unknown>)[brand] === true;
 
 /** `TransientError` か（別の複製の core が作った例外も含む） */
 export const isTransientError = (e: unknown): e is TransientError => branded(e, TRANSIENT);
 /** `ConfigError` か（別の複製の core が作った例外も含む） */
 export const isConfigError = (e: unknown): e is ConfigError => branded(e, CONFIG);
+/** `UsageError` か（別の複製の core が作った例外も含む） */
+export const isUsageError = (e: unknown): e is UsageError => branded(e, USAGE);
 
 /** 再試行で回復しうる基盤の失敗（外部の API の一時的な障害、回数の上限など）。`instanceof` も印で判定する */
 export class TransientError extends Error {
@@ -43,6 +46,24 @@ export class ConfigError extends Error {
   constructor(message: string, options: { key?: string; cause?: unknown } = {}) {
     super(message, { cause: options.cause });
     this.key = options.key;
+  }
+}
+
+/**
+ * 呼ぶ側の誤り（引数の値の誤り、上限を超える量、相手の API が要求を受け付けない）。直すまで回復しない。`instanceof` も印で判定する
+ * - `code` はスネークケースのコード（例: `invalid_date`）。分類は `unknown`（想定外の失敗として報告する）
+ */
+export class UsageError extends Error {
+  // 派生のクラスは通常の判定（印で判定すると、別の派生のクラスの例外まで一致するため）
+  static [Symbol.hasInstance](value: unknown): boolean {
+    return this === UsageError ? isUsageError(value) : Function.prototype[Symbol.hasInstance].call(this, value);
+  }
+  readonly [USAGE] = true;
+  override readonly name = 'UsageError';
+  readonly code: string;
+  constructor(code: string, message: string = code, options: { cause?: unknown } = {}) {
+    super(message, { cause: options.cause });
+    this.code = code;
   }
 }
 

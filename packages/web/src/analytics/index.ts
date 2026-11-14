@@ -2,6 +2,7 @@
 // - 記録先と読み込み元のアダプターは `@ryusenkei/web/cloudflare`（Analytics Engine）と、ここの `memoryAnalytics`
 // - 出来事の項目の名前と列の順は使う側の値（`defineEventSchema`）
 // - 送り口（ブラウザの sendBeacon）は `@ryusenkei/web/analytics/client`
+import { UsageError } from '@ryusenkei/core';
 
 /**
  * 出来事の形。項目の順が、位置で持つ記録先の列の順（Analytics Engine の `blob1`〜、`double1`〜）
@@ -75,6 +76,8 @@ export type VisitorKeyOptions = Readonly<{
   label?: string;
   /** 鍵の長さ（バイト、既定は3 = 16進の6文字） */
   bytes?: number;
+  /** 今の時刻（ミリ秒）を返す関数（既定は `Date.now`。呼び出しの `at` がないときに使う） */
+  now?: () => number;
 }>;
 
 const enc = new TextEncoder();
@@ -102,7 +105,8 @@ export function visitorKey(options: VisitorKeyOptions): VisitorKey {
     for (const old of [...dayKeys.keys()].slice(0, -KEEP_DAYS)) dayKeys.delete(old);
     return key;
   };
-  return async (ip, scope, at = Date.now()) => {
+  const now = options.now ?? Date.now;
+  return async (ip, scope, at = now()) => {
     if (!ip) return '';
     const mac = await crypto.subtle.sign('HMAC', await dayKeyOf(dayIn(options.timeZone, at)), enc.encode(`${ip}\n${scope}`));
     return Array.from(new Uint8Array(mac, 0, bytes), (b) => b.toString(16).padStart(2, '0')).join('');
@@ -113,18 +117,19 @@ const matches = (value: string, wanted: string | readonly string[]) => (typeof w
 
 /**
  * メモリの記録先と読み込み元（試験と手元の開発用。集計の結果は Analytics Engine の標本の補正なしの値と同じ）
- * - `events`: 記録した出来事と時刻
+ * - `events`: 記録した出来事と時刻（ミリ秒）
+ * - 宣言にない項目で集計すると `UsageError`（`unknown_field`）
  */
 export function memoryAnalytics<B extends string, D extends string, I extends string = never>(
   schema: EventSchema<B, D, I>,
-  options: Readonly<{ now?: () => Date }> = {},
-): EventRecorder<EventOf<B, D, I>> & EventCounts<B | IndexName<I>> & { readonly events: readonly { at: Date; event: EventOf<B, D, I> }[] } {
+  options: Readonly<{ now?: () => number }> = {},
+): EventRecorder<EventOf<B, D, I>> & EventCounts<B | IndexName<I>> & { readonly events: readonly { at: number; event: EventOf<B, D, I> }[] } {
   type K = B | IndexName<I>;
-  const events: { at: Date; event: EventOf<B, D, I> }[] = [];
-  const now = options.now ?? (() => new Date());
+  const events: { at: number; event: EventOf<B, D, I> }[] = [];
+  const now = options.now ?? Date.now;
   const known = new Set<string>([...schema.blobs, ...(typeof schema.index === 'string' ? [schema.index] : [])]);
   const blob = (event: EventOf<B, D, I>, key: K) => {
-    if (!known.has(key)) throw new Error(`unknown_field: ${key}`);
+    if (!known.has(key)) throw new UsageError('unknown_field', `宣言にない項目: ${key}`);
     return (event as Partial<Record<K, string>>)[key] ?? '';
   };
   return {

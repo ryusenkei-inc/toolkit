@@ -20,7 +20,7 @@ const setup = () => {
   const limiter = fakeRateLimiter();
   const a = memoryDestination('a');
   const b = memoryDestination('b');
-  const handle = submissionHandler({ forms: { inquiry, feedback }, destinations: [a, b], rateLimiter: limiter, botCheck: bot, now: () => new Date('2026-11-07T00:00:00Z') });
+  const handle = submissionHandler({ forms: { inquiry, feedback }, destinations: [a, b], rateLimiter: limiter, botCheck: bot, now: () => Date.parse('2026-11-07T00:00:00Z') });
   return { bot, limiter, a, b, handle };
 };
 const post = (fields: Record<string, string>, headers: Record<string, string> = {}) => {
@@ -209,6 +209,22 @@ describe('httpDestination', () => {
   });
 });
 
+describe('届け先の名前と回数の制限のキー', () => {
+  it('mailDestination は name で名前を変えられる', () => {
+    const mailer = memoryMailer();
+    expect(mailDestination({ mailer, from: { email: 'a@example.com' }, to: { email: 'b@example.com' }, subject: () => 's', copy }).name).toBe('mail');
+    expect(mailDestination({ mailer, name: 'mail-owner', from: { email: 'a@example.com' }, to: { email: 'b@example.com' }, subject: () => 's', copy }).name).toBe('mail-owner');
+  });
+
+  it('rateLimitKey は IP アドレスとフォームの名前からキーを作る', async () => {
+    quiet();
+    const limiter = fakeRateLimiter();
+    const handle = submissionHandler({ forms: { inquiry }, destinations: [memoryDestination()], rateLimiter: limiter, rateLimitKey: ({ ip, form }) => `contact:${form}:${ip}` });
+    await handle(post(ok));
+    expect(limiter.keys).toEqual(['contact:inquiry:203.0.113.1']);
+  });
+});
+
 describe('webhookDestination の選択肢', () => {
   it('名前、署名のヘッダー名、鍵ごとの v1、本文の id', async () => {
     let sent: { headers: Record<string, string>; body: string } | undefined;
@@ -216,12 +232,21 @@ describe('webhookDestination の選択肢', () => {
       sent = { headers: init.headers as Record<string, string>, body: String(init.body) };
       return new Response(null, { status: 204 });
     }) as unknown as typeof fetch;
-    const d = webhookDestination({ url: 'https://hooks.example.com/in', name: 'hook-1', secret: ['new', 'old'], signatureHeader: 'x-cms-signature', fetch: fetcher });
+    const d = webhookDestination({ url: 'https://hooks.example.com/in', name: 'hook-1', secret: ['new', 'old'], header: 'x-cms-signature', fetch: fetcher });
     expect(d.name).toBe('hook-1');
     expect((await d.deliver(submission, { requestId: 'r' })).ok).toBe(true);
     expect(sent!.headers['x-cms-signature']).toMatch(/^t=\d+,v1=[\w-]+,v1=[\w-]+$/);
     expect(sent!.headers['x-signature']).toBeUndefined();
     expect(JSON.parse(sent!.body)).toMatchObject({ event: 'form.submitted', id: expect.stringMatching(/^[0-9a-f-]{36}$/), form: 'inquiry' });
+  });
+
+  it('項目の secret が空なら ConfigError（署名なしで送らない）、項目がなければ署名しない', async () => {
+    const fetcher = vi.fn(async () => new Response(null, { status: 204 })) as unknown as typeof fetch;
+    await expect(webhookDestination({ url: 'https://hooks.example.com/in', secret: undefined, fetch: fetcher }).deliver(submission, { requestId: 'r' })).rejects.toBeInstanceOf(ConfigError);
+    await expect(webhookDestination({ url: 'https://hooks.example.com/in', secret: ['', ''], fetch: fetcher }).deliver(submission, { requestId: 'r' })).rejects.toBeInstanceOf(ConfigError);
+    expect(fetcher).not.toHaveBeenCalled();
+    expect((await webhookDestination({ url: 'https://hooks.example.com/in', fetch: fetcher }).deliver(submission, { requestId: 'r' })).ok).toBe(true);
+    expect((vi.mocked(fetcher).mock.calls[0] as unknown as [string, RequestInit])[1].headers).not.toHaveProperty('x-signature');
   });
 
   it('heading は通知の本文の先頭', () => {

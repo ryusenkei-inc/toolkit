@@ -46,6 +46,10 @@
       "types": "./dist/mail/testing.d.ts",
       "default": "./dist/mail/testing.js"
     },
+    "./blob": {
+      "types": "./dist/blob/index.d.ts",
+      "default": "./dist/blob/index.js"
+    },
     "./webhook": {
       "types": "./dist/webhook/index.d.ts",
       "default": "./dist/webhook/index.js"
@@ -70,13 +74,18 @@
       "types": "./dist/access/index.d.ts",
       "default": "./dist/access/index.js"
     },
+    "./oidc": {
+      "types": "./dist/oidc/index.d.ts",
+      "default": "./dist/oidc/index.js"
+    },
     "./seo": {
       "types": "./dist/seo/index.d.ts",
       "default": "./dist/seo/index.js"
     }
   },
   "files": [
-    "dist"
+    "dist",
+    "CHANGELOG.md"
   ],
   "publishConfig": {
     "access": "public",

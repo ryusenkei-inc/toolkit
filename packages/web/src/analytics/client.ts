@@ -7,7 +7,8 @@
  * - 自動操作のブラウザ（`navigator.webdriver`）とサーバーの上では送らない
  */
 export function sendEvent(url: string, event: unknown): void {
-  if (typeof navigator === 'undefined' || typeof window === 'undefined' || navigator.webdriver) return;
+  // サーバー（Workers、Node）は `document` がない。Edge の環境には `window` を全体の別名に持つものがあるので、`window` では判定しない
+  if (typeof navigator === 'undefined' || typeof document === 'undefined' || navigator.webdriver) return;
   try {
     const body = JSON.stringify(event);
     if (navigator.sendBeacon?.(url, body)) return;

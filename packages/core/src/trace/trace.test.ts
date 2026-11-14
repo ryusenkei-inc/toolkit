@@ -15,7 +15,9 @@ function memoryTracer(sampled = true): Tracer & { spans: Recorded[] } {
   let n = 0;
   return {
     spans,
-    startSpan(name, attributes: SpanAttributes = {}, parent = null) {
+    startSpan(name, options = {}) {
+      const parent = options.parent ?? null;
+      const attributes: SpanAttributes = options.attributes ?? {};
       const context = { traceId: parent?.traceId ?? TRACE, spanId: String(++n).padStart(16, '0'), sampled: parent ? parent.sampled : sampled };
       const recorded: Recorded = { name, context, parent, attributes: { ...attributes } };
       spans.push(recorded);
@@ -47,8 +49,8 @@ describe('logTracer', () => {
   it('区間を終えたときに1行のログを書き、2回目の end と記録の対象の外は書かない', () => {
     const info = vi.spyOn(console, 'info').mockImplementation(() => undefined);
     const tracer = logTracer();
-    const root = tracer.startSpan('root', { a: 1 });
-    const child = tracer.startSpan('child', {}, root.context);
+    const root = tracer.startSpan('root', { attributes: { a: 1 } });
+    const child = tracer.startSpan('child', { parent: root.context });
     child.setAttributes({ b: 2 });
     child.end('error');
     child.end();
@@ -104,15 +106,15 @@ describe('区間の受け渡し', () => {
       return new Response(null, { status: 200 });
     };
     const tracer = memoryTracer();
-    await traceEntry(tracer, 'job', () => tracedFetch('https://api.example.com/v1/items?id=1', { method: 'post', headers: { a: '1' } }, { fetcher }));
+    await traceEntry(tracer, 'job', () => tracedFetch('https://api.example.com/v1/items?id=1', { method: 'post', headers: { a: '1' } }, { fetch: fetcher }));
     const fetchSpan = tracer.spans[1]!;
     expect(fetchSpan).toMatchObject({ name: 'fetch', attributes: { 'http.method': 'POST', 'http.host': 'api.example.com', 'http.status': 200 }, status: 'ok' });
     expect(sent[0]!.get('traceparent')).toBe(formatTraceparent(fetchSpan.context));
     expect(sent[0]!.get('a')).toBe('1');
 
-    await tracedFetch('https://api.example.com/', {}, { fetcher });
+    await tracedFetch('https://api.example.com/', {}, { fetch: fetcher });
     expect(sent[1]!.has('traceparent')).toBe(false);
-    await traceEntry(tracer, 'job', () => tracedFetch('https://other.example.com/', {}, { fetcher, propagate: false }));
+    await traceEntry(tracer, 'job', () => tracedFetch('https://other.example.com/', {}, { fetch: fetcher, propagate: false }));
     expect(sent[2]!.has('traceparent')).toBe(false);
   });
 

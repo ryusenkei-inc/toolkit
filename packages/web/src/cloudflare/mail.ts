@@ -6,6 +6,11 @@ export type SendEmailBinding = {
   send(message: { from: MailAddress; to: MailAddress[]; replyTo?: MailAddress; subject: string; text: string; html?: string }): Promise<{ messageId: string }>;
 };
 
+export type CloudflareMailerOptions = Readonly<{
+  /** binding の名前（`ConfigError` の `key` に入れる） */
+  name?: string;
+}>;
+
 // binding のエラーの `code` の分類（Email Service の Workers API の一覧）
 const TRANSIENT = ['E_RATE_LIMIT_EXCEEDED', 'E_DAILY_LIMIT_EXCEEDED', 'E_INTERNAL_SERVER_ERROR'];
 const CONFIG = ['E_SENDER_NOT_VERIFIED', 'E_SENDER_DOMAIN_NOT_AVAILABLE', 'E_ACCOUNT_SUSPENDED', 'E_RECIPIENT_NOT_ALLOWED'];
@@ -17,10 +22,10 @@ const INVALID = /^E_(VALIDATION_ERROR|FIELD_MISSING|TOO_MANY_RECIPIENTS|TOO_MANY
  * - 送信元のドメインは Email Sending に登録済みであること（未登録は `ConfigError`）
  * - 知らないエラーコードはそのまま投げる（想定外の失敗として扱う）
  */
-export function cloudflareMailer(binding: SendEmailBinding | undefined): Mailer {
+export function cloudflareMailer(binding: SendEmailBinding | undefined, options: CloudflareMailerOptions = {}): Mailer {
   return {
     async send(mail: Mail) {
-      if (!binding) throw new ConfigError('send_email の binding が未設定');
+      if (!binding) throw new ConfigError('send_email の binding が未設定', { key: options.name ?? 'binding' });
       const valid = validateMail(mail);
       if (!valid.ok) return valid;
       try {

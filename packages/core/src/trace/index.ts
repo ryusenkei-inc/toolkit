@@ -37,7 +37,7 @@ export type TraceEntryOptions<R> = Readonly<{
  */
 export function traceEntry<R>(tracer: Tracer, name: string, fn: (span: Span) => Promise<R> | R, options: TraceEntryOptions<R> = {}): Promise<R> {
   const parent = store.getStore()?.span.context ?? parseTraceparent(options.traceparent);
-  return runSpan({ tracer, span: tracer.startSpan(name, options.attributes, parent) }, fn, options.statusOf);
+  return runSpan({ tracer, span: tracer.startSpan(name, { ...(options.attributes && { attributes: options.attributes }), parent }) }, fn, options.statusOf);
 }
 
 /**
@@ -58,11 +58,13 @@ export function traceRequest(tracer: Tracer, name: string, request: Request, han
   );
 }
 
+export type WithSpanOptions = Readonly<{ attributes?: SpanAttributes }>;
+
 /** 処理の区切りの区間。区間の外と、記録の対象の外では `fn` をそのまま実行する */
-export function withSpan<R>(name: string, fn: () => Promise<R> | R, attributes?: SpanAttributes): Promise<R> {
+export function withSpan<R>(name: string, fn: () => Promise<R> | R, options: WithSpanOptions = {}): Promise<R> {
   const active = store.getStore();
   if (!active?.span.context.sampled) return Promise.resolve().then(fn);
-  return runSpan({ tracer: active.tracer, span: active.tracer.startSpan(name, attributes, active.span.context) }, fn);
+  return runSpan({ tracer: active.tracer, span: active.tracer.startSpan(name, { ...(options.attributes && { attributes: options.attributes }), parent: active.span.context }) }, fn);
 }
 
 /** 実行中の区間に属性を足す（区間の外では何もしない） */
@@ -91,7 +93,7 @@ export function withTraceparent(init?: HeadersInit): Headers {
 
 export type TracedFetchOptions = Readonly<{
   /** 送る関数（service binding の `fetch` など。既定は全体の `fetch`） */
-  fetcher?: (url: string, init: RequestInit) => Promise<Response>;
+  fetch?: (url: string, init: RequestInit) => Promise<Response>;
   /** traceparent を送る（既定は `true`。トレースを知らない第三者へ送るときは `false`） */
   propagate?: boolean;
 }>;
@@ -104,7 +106,7 @@ export type TracedFetchOptions = Readonly<{
  */
 export function tracedFetch(target: string | URL, init: RequestInit = {}, options: TracedFetchOptions = {}): Promise<Response> {
   const url = String(target);
-  const call = (requestInit: RequestInit) => (options.fetcher ? options.fetcher(url, requestInit) : fetch(url, requestInit));
+  const call = (requestInit: RequestInit) => (options.fetch ? options.fetch(url, requestInit) : fetch(url, requestInit));
   const active = store.getStore();
   if (!active) return call(init);
   const send = async () => {
@@ -114,5 +116,5 @@ export function tracedFetch(target: string | URL, init: RequestInit = {}, option
   };
   if (!active.span.context.sampled) return send();
   const attributes = { 'http.method': (init.method ?? 'GET').toUpperCase(), 'http.host': URL.parse(url)?.host ?? null };
-  return runSpan({ tracer: active.tracer, span: active.tracer.startSpan('fetch', attributes, active.span.context) }, send, (res) => (res.status >= 500 ? 'error' : 'ok'));
+  return runSpan({ tracer: active.tracer, span: active.tracer.startSpan('fetch', { attributes, parent: active.span.context }) }, send, (res) => (res.status >= 500 ? 'error' : 'ok'));
 }

@@ -1,6 +1,6 @@
 # @ryusenkei/web
 
-Runtime libraries for launching small web products on Cloudflare Workers or Vercel: HTTP failure responses, contact and feedback forms with delivery by email or webhook, webhook signing and verification, event analytics, meta tags and JSON-LD and sitemaps for SEO, a privacy policy, a 特定商取引法 notice, and an advertising disclosure built from a declaration, and the Cloudflare, Turnstile, and Access integrations they need. Each area is a subpath export. The only runtime dependency is [`@ryusenkei/core`](../core), for errors, `Result`, and logging. The server side is a standard `(Request) => Response`, and nothing renders UI.
+Runtime libraries for launching small web products on Cloudflare Workers or Vercel: HTTP failure responses, contact and feedback forms with delivery by email or webhook, webhook signing and verification, event analytics, meta tags and JSON-LD and sitemaps for SEO, a privacy policy, a 特定商取引法 notice, and an advertising disclosure built from a declaration, and the Cloudflare, Turnstile, and Access integrations they need. Each area is a subpath export. The only runtime dependency is [`@ryusenkei/core`](../core), for errors, `Result`, and logging. The server side is a standard `(Request) => Response`, and nothing renders UI. The tests run on Node and again in an Edge runtime with only Web-standard globals, as on Cloudflare Workers and Vercel Edge.
 
 ## Install
 
@@ -18,15 +18,19 @@ pnpm add @ryusenkei/core @ryusenkei/web
 | `@ryusenkei/web/legal` | Privacy policy, 特定商取引法 notice, advertising disclosure, operator details |
 | `@ryusenkei/web/mail` | The `Mail` shape, the `Mailer` interface, and the checks before sending |
 | `@ryusenkei/web/mail/testing` | An in-memory `Mailer` |
+| `@ryusenkei/web/blob` | The `BlobStore` port and an in-memory store |
 | `@ryusenkei/web/webhook` | Signing and verifying webhooks and app-to-app requests (HMAC-SHA256) |
 | `@ryusenkei/web/analytics` | Event recording and count ports, cookieless visitor keys, an in-memory store |
 | `@ryusenkei/web/analytics/client` | Sending events from the page with `sendBeacon` |
 | `@ryusenkei/web/seo` | Canonical URLs, meta tags, JSON-LD, sitemaps, `robots.txt` |
 | `@ryusenkei/web/cloudflare` | Workers bindings: Rate Limiting, Email Service, R2, and Analytics Engine |
 | `@ryusenkei/web/turnstile` | Turnstile's server-side check |
-| `@ryusenkei/web/access` | Cloudflare Access authentication and OIDC JWT verification |
+| `@ryusenkei/web/access` | Cloudflare Access authentication |
+| `@ryusenkei/web/oidc` | JWT verification for any OIDC provider |
 
 This package replaces `form`, `legal`, `mail`, `adapter-cloudflare`, `adapter-turnstile`, and `adapter-access`. Up to 0.5.x, `@ryusenkei/web` also contained what is now `@ryusenkei/core`; from 0.6.0, import errors, `Result`, and logging from `@ryusenkei/core`.
+
+Across the package, required arguments are positional and optional settings go in a trailing options object. Clocks are `now: () => number` (milliseconds), and `fetch` replacements are named `fetch`.
 
 
 ## HTTP failure responses (`@ryusenkei/web`)
@@ -108,8 +112,9 @@ Problems and handler results carry codes only. `FORM_MESSAGES_JA` has standard J
 import { formMessage, problemMessage } from '@ryusenkei/web/form';
 
 problemMessage({ path: 'message', code: 'too_short', params: { min: 10 } }); // '10文字以上で入力してください'
-problemMessage(problem, { url_host: 'サイトの記事の URL を入力してください' }); // a product's own wording wins
+problemMessage(problem, { messages: { url_host: 'サイトの記事の URL を入力してください' } }); // a product's own wording wins
 formMessage(result.error); // handler results such as 'rate_limited' and 'network'
+formMessage('too_long', { params: { max: 100 } });
 ```
 
 An unknown code (for example one from `refine`) comes back as is unless you pass a message for it.
@@ -149,15 +154,17 @@ The order is validate, then rate limit, then bot check, then deliver. Validation
 How submissions are read and logged:
 
 - With several forms, the `form` field picks one; with one form it can be omitted. Form data and JSON bodies are both accepted.
-- The rate-limit key is the client IP (`cf-connecting-ip`, then the first `x-forwarded-for`).
+- The rate-limit key is `form:<client IP>` (`cf-connecting-ip`, then the first `x-forwarded-for`). `rateLimitKey: ({ ip, form }) => string` changes it, for example to share one limiter between products.
+- `now` (`() => number`) replaces the clock for `receivedAt`.
 - Submitted values are never logged; logs carry the form name, destination names, and the request ID.
 
 Destinations:
 
-- `mailDestination`: sends `notificationText` (each field as `■ label` and its value, in declared order). Replies go to the submitter's `email` and `name`.
+- `mailDestination`: sends `notificationText` (each field as `■ label` and its value, in declared order). Replies go to the submitter's `email` and `name`. `name` (default `mail`) tells several mail destinations apart.
 - `webhookDestination`: posts JSON (`{ event: 'form.submitted', id, form, values, order, receivedAt }`, where `id` is a UUID per submission for deduplication) or Slack text, with a 3-second timeout and no redirects.
   - With `secret`, it adds `x-signature: t=<seconds>,v1=<HMAC-SHA256>`, signed by `signWebhook` from [`@ryusenkei/web/webhook`](#webhooks-ryusenkeiwebwebhook). The receiver checks it with `verifyWebhookRequest`.
-  - `signatureHeader` renames the header, and `signatureScheme` changes the format. During a key rotation, pass `secret` as an array (new key first); each key adds its own `v1`.
+  - A `secret` that is present but empty (such as an unset environment variable) throws `ConfigError` instead of sending unsigned. Leave the option out to send unsigned.
+  - `header` renames the header, and `scheme` changes the format. During a key rotation, pass `secret` as an array (new key first); each key adds its own `v1`.
   - `name` (default `webhook`) tells several webhooks apart in logs and results. `copy.heading` puts a line above the Slack text.
 - `httpDestination`: forwards the values as JSON to another API, for example from a site's server to a CMS that stores the submission. It sends `headers` (such as an API key) and `x-request-id`; a 2xx answer is success, and its JSON body becomes the destination's value. `body` changes what is sent.
 - Write your own as `{ name, deliver(submission) }`. Names must be unique.
@@ -172,7 +179,7 @@ submissionHandler({
 });
 ```
 
-`rateLimiter` and `botCheck` are structural types, so anything with `limit(key)` / `verify(input)` returning a `Result` works.
+`rateLimiter` and `botCheck` take the `RateLimiter` and `BotCheck` ports exported from `@ryusenkei/web/form/server`: anything with `limit(key)` / `verify({ token, remoteIp?, action? })` returning a `Result` works. `cloudflareRateLimiter` and `turnstileBotCheck` implement them.
 
 ### Submit from the page (`@ryusenkei/web/form/client`)
 
@@ -313,7 +320,7 @@ interface Mailer { send(mail: Mail): Promise<Result<{ id: string | undefined }, 
 
 - `invalid_input`: a malformed address, no recipient, or a line break in a header field (blocks header injection).
 - `rejected`: the provider would not deliver it (a suppressed recipient, a delivery failure).
-- Infrastructure failures are thrown as `TransientError` or `ConfigError` from `@ryusenkei/web`.
+- Infrastructure failures are thrown as `TransientError` or `ConfigError` from `@ryusenkei/core`.
 
 ### Checks
 
@@ -325,7 +332,24 @@ interface Mailer { send(mail: Mail): Promise<Result<{ id: string | undefined }, 
 
 ### Testing
 
-`memoryMailer()` from `@ryusenkei/web/mail/testing` validates, then keeps sent mail in `outbox`.
+`memoryMailer()` from `@ryusenkei/web/mail/testing` validates, then keeps sent mail in `outbox`. It passes the same contract tests as `cloudflareMailer`.
+
+## Blob storage (`@ryusenkei/web/blob`)
+
+The `BlobStore` port for files kept by key, and an in-memory store. The R2 adapter is `r2BlobStore` in `@ryusenkei/web/cloudflare`.
+
+```ts
+import { memoryBlobStore, type BlobStore } from '@ryusenkei/web/blob';
+
+const files: BlobStore = env.FILES ? r2BlobStore(env.FILES, { name: 'FILES' }) : memoryBlobStore();
+await files.put('avatars/1.png', bytes, { contentType: 'image/png' });
+```
+
+- `put(key, body, { contentType? })` stores a string, bytes, or a stream.
+- `get(key)` gives `{ body, contentType, size }`, or `null` when the key is missing. `contentType` is `null` when none was stored. The body is a stream and can be read once.
+- `exists(key)` checks without reading the body.
+- `delete(key | keys)` takes one key or many. Missing keys count as deleted.
+- `memoryBlobStore()` keeps what was stored in `objects`. It passes the same contract tests as `r2BlobStore`.
 
 ## Webhooks (`@ryusenkei/web/webhook`)
 
@@ -346,7 +370,7 @@ const payload = await request.json(); // the body was read from a clone, so it i
 
 | Function | Does |
 | --- | --- |
-| `signWebhook(secret, parts, { now?, scheme? })` | The signature header value |
+| `signWebhook(secret, parts, { now?, scheme? })` | The signature header value. `now` returns the time in milliseconds |
 | `verifyWebhook(secret, header, parts, { now?, toleranceSec?, scheme? })` | Checks a header value against the parts, as `Result<void, code>` |
 | `webhookHeaders(secret, parts, { header, subjectHeader?, init?, ... })` | `Headers` with the signature (and the subject) added |
 | `verifyWebhookRequest(secret, request, { header, subjectHeader?, ... })` | Checks a `Request` |
@@ -394,7 +418,7 @@ if (!isBotUserAgent(request.headers.get('user-agent'))) {
 }
 
 // In a scheduled job or an admin API
-const counts = analyticsEngineCounts({ accountId: env.CF_ACCOUNT_ID, token: env.CF_ANALYTICS_TOKEN, dataset: 'site_events', schema: events });
+const counts = analyticsEngineCounts(events, { accountId: env.CF_ACCOUNT_ID, token: env.CF_ANALYTICS_TOKEN, dataset: 'site_events' });
 const rows = await counts.count({ from: '2026-11-01', to: '2026-11-14', timeZone: 'Asia/Tokyo', groupBy: ['page'], where: { event: 'view' }, distinct: 'visitor' });
 // [{ day: '2026-11-14', keys: { page: 'top' }, count: 120, distinct: 87 }, ...]
 ```
@@ -402,13 +426,13 @@ const rows = await counts.count({ from: '2026-11-01', to: '2026-11-14', timeZone
 - `EventRecorder` is `{ record(event) }`. It doesn't wait and never throws into the request.
 - `EventCounts` is `{ count(query) }`. Rows come per day (in `timeZone`) and per `groupBy` field, sorted. `where` takes a value or a list of values per field. `distinct` counts the distinct values of a field; with visitor keys, that is the deduplicated count.
 - `index` is the sampling key (`index1` in Analytics Engine). Give a field name (`index: 'subject'`) to record that field of the event there and use it in `groupBy`, `where`, and `distinct`; a function computes the value and can't be queried.
-- `memoryAnalytics(schema)` is both ports in memory, for tests and local development. It keeps what was recorded in `events`.
+- `memoryAnalytics(schema, { now? })` is both ports in memory, for tests and local development. It keeps what was recorded in `events` (`{ at, event }`, with `at` in milliseconds). A query on a field the schema doesn't declare throws `UsageError` (`unknown_field`), as with Analytics Engine.
 - `dayIn(timeZone, at?)` gives the `YYYY-MM-DD` date in a time zone.
 - `isBotUserAgent(ua)` matches bots, crawlers, link previews, monitors, and headless browsers.
 
 ### Visitor keys
 
-`visitorKey({ secret, timeZone, label?, bytes? })` returns `(ip, scope, at?) => Promise<string>`, a key that counts the same person once per day and scope without a cookie.
+`visitorKey({ secret, timeZone, label?, bytes?, now? })` returns `(ip, scope, at?) => Promise<string>`, a key that counts the same person once per day and scope without a cookie. `at` is the time of the event (a `Date` or milliseconds, default `now()`).
 
 - A key for the day (HMAC of `<label>:<date>` with the secret) hashes `<ip>\n<scope>`, and the first `bytes` bytes (default 3, six hex characters) are kept.
 - The key changes every day, and keys of different scopes can't be matched, so they can't follow a person around. With 3 bytes, about 256 IPv4 addresses share each value, so even a leaked secret doesn't identify an address.
@@ -448,7 +472,7 @@ new Response(robotsTxt({ sitemaps: [`${origin}/sitemap.xml`] }), { headers: { 'c
 | `jsonLdText(data)`, `jsonLdScript(data)` | JSON for a `<script type="application/ld+json">` with `<` escaped, or the whole element |
 | `organizationJsonLd`, `websiteJsonLd`, `breadcrumbJsonLd`, `articleJsonLd`, `itemListJsonLd` | schema.org nodes. Undefined fields are left out. Other types are plain objects of type `JsonLd` |
 | `jsonLdGraph(nodes)` | One `@graph` from several nodes |
-| `sitemapXml(entries, { origin? })`, `sitemapIndexXml(sitemaps)` | A sitemap (duplicates removed, at most 50,000 URLs) or a sitemap index |
+| `sitemapXml(entries, { origin? })`, `sitemapIndexXml(sitemaps)` | A sitemap (duplicates removed; more than 50,000 URLs throws `UsageError` `sitemap_too_large`) or a sitemap index |
 | `robotsTxt({ rules?, sitemaps? })` | `robots.txt`. The default rule allows everything |
 
 URL normalization (`www`-less, no trailing slash) as the first step of a handler:
@@ -474,39 +498,43 @@ Keep pages out of search results with the `robots` meta tag, not `Disallow` in `
 
 ## Cloudflare Workers bindings (`@ryusenkei/web/cloudflare`)
 
-Cloudflare Workers bindings: the rate limiter and mail sender that `@ryusenkei/web/form` uses, file storage on R2, and the Analytics Engine adapters for `@ryusenkei/web/analytics`. The binding types are structural, so there is no dependency on `@cloudflare/workers-types`.
+Cloudflare Workers bindings: the rate limiter and mail sender that `@ryusenkei/web/form` uses, file storage on R2 for `@ryusenkei/web/blob`, and the Analytics Engine adapters for `@ryusenkei/web/analytics`. The binding types are structural, so there is no dependency on `@cloudflare/workers-types`.
 
 ### Usage
 
 ```ts
 import { cloudflareMailer, cloudflareRateLimiter, r2BlobStore } from '@ryusenkei/web/cloudflare';
 
-const rateLimiter = cloudflareRateLimiter(env.FORM_LIMITER);
-const mailer = cloudflareMailer(env.EMAIL);
-const files = r2BlobStore(env.FILES);
+const rateLimiter = cloudflareRateLimiter(env.FORM_LIMITER, { name: 'FORM_LIMITER' });
+const mailer = cloudflareMailer(env.EMAIL, { name: 'EMAIL' });
+const files = r2BlobStore(env.FILES, { name: 'FILES' });
 ```
 
 | Function | Returns | Binding |
 | --- | --- | --- |
-| `cloudflareRateLimiter` | `limit(key)` → `rate_limited` over the limit | Rate Limiting (`ratelimits` in wrangler config; limit and period are set there). Counts are per Cloudflare location, not a strict global limit |
+| `cloudflareRateLimiter` | a `RateLimiter` from `@ryusenkei/web/form/server`: `limit(key)` → `rate_limited` over the limit | Rate Limiting (`ratelimits` in wrangler config; limit and period are set there). Counts are per Cloudflare location, not a strict global limit |
 | `cloudflareMailer` | a `Mailer` from `@ryusenkei/web/mail` | Email Service (`send_email`). The sender domain must be onboarded to Email Sending |
-| `r2BlobStore` | a `BlobStore`: `put`, `get`, `exists`, `delete` | R2 (`r2_buckets`) |
+| `r2BlobStore` | a `BlobStore` from `@ryusenkei/web/blob` | R2 (`r2_buckets`). R2 needs the length of a stream, so read a body of unknown length into an `ArrayBuffer` first |
 | `analyticsEngineRecorder(binding, schema)` | an `EventRecorder` | Analytics Engine (`analytics_engine_datasets`). Fields go to `blob1`… and `double1`… in schema order, `index` to `index1` (queried as `index1` when it is a field name) |
-| `analyticsEngineCounts({ accountId, token, dataset, schema })` | an `EventCounts` | None: the SQL API over HTTP, with an API token that can read Account Analytics |
+| `analyticsEngineCounts(schema, { accountId, token, dataset })` | an `EventCounts` | None: the SQL API over HTTP, with an API token that can read Account Analytics |
 
-`BlobStore`:
-
-- `put(key, body, { contentType? })` stores a string, bytes, or a stream. R2 needs the length of a stream, so read a body of unknown length into an `ArrayBuffer` first.
-- `get(key)` gives `{ body, contentType, size }`, or `null` when the key is missing. `contentType` is `null` when none was stored. The body is a stream and can be read once.
-- `exists(key)` checks without reading the body.
-- `delete(key | keys)` takes one key or many, split into requests of 1,000 keys (R2's limit). Missing keys count as deleted.
+Each adapter takes `{ name }`, the binding's name in your wrangler config, which goes into the `key` of the `ConfigError` for a missing binding (default `binding`).
 
 ### Errors
 
-- A missing binding throws `ConfigError`, so a misconfigured deploy answers 503 `not_configured`. `cloudflareRateLimiter(binding, { whenMissing: 'allow' })` lets every request through instead, for local development or deployments where the limit is optional.
-- A Rate Limiting or R2 binding failure throws `TransientError`.
-- `analyticsEngineRecorder` is the exception: a missing binding records nothing (`whenMissing: 'error'` throws instead), and a write failure is logged as `analytics_write_failed` and ignored. A missing number is written as `0` (`missingDouble` changes it).
-- `analyticsEngineCounts` corrects for sampling with `SUM(_sample_interval)`. `distinct` is not corrected and reads low once Analytics Engine samples. It reads 10,000 rows per call and throws past 200,000. A 429 or 5xx throws `TransientError`; values with quotes, backslashes, or control characters are rejected rather than escaped.
+- A missing binding throws `ConfigError` when the adapter is first used, so a misconfigured deploy answers 503 `not_configured`.
+- A Rate Limiting or R2 binding failure throws `TransientError`. Deleting many R2 keys is split into requests of 1,000 keys (R2's limit).
+- `analyticsEngineRecorder` never throws into the request: a write failure is logged as `analytics_write_failed` and ignored. A missing number is written as `0` (`missingDouble` changes it).
+- `analyticsEngineCounts` corrects for sampling with `SUM(_sample_interval)`. `distinct` is not corrected and reads low once Analytics Engine samples. It reads 10,000 rows per call.
+  - A 429 or 5xx throws `TransientError`. A 401 or 403, a missing `accountId` or `token`, or a malformed `dataset` throws `ConfigError`.
+  - Mistakes in the query throw `UsageError`: `invalid_date`, `invalid_time_zone`, `invalid_value` (quotes, backslashes, or control characters are rejected rather than escaped), `unknown_field`, `rows_exceeded` (past 200,000 rows), and `query_failed` for any other 4xx.
+
+`whenMissing` decides what a missing binding does where there is a sensible fallback. The two adapters differ on purpose: a missing limit can let requests through, but a missing recorder only loses analytics.
+
+| Adapter | Default | Other value |
+| --- | --- | --- |
+| `cloudflareRateLimiter` | `error`: throws `ConfigError` | `allow`: lets every request through (local development, or a limit that is optional) |
+| `analyticsEngineRecorder` | `ignore`: records nothing | `error`: throws `ConfigError` |
 - The mailer runs `validateMail` first, then maps Email Service error codes:
 
 | Codes | Result |
@@ -539,7 +567,7 @@ It calls siteverify with the secret, the token, and the IP address, then checks:
 | Turnstile rejects it (invalid, expired, already used) | `rejected` |
 | The issuing hostname is not in `hostnames` | `hostname_mismatch` |
 | `action` is given and differs from the token's | `action_mismatch` |
-| Missing or invalid secret | throws `ConfigError` |
+| Missing or invalid secret | throws `ConfigError` (`key: 'secret'`) |
 | siteverify is unreachable, times out (5 seconds by default, `timeoutMs`), returns non-2xx or an unreadable body, or reports `internal-error` | throws `TransientError` |
 
 ### Test keys
@@ -584,19 +612,22 @@ The result is an `Identity`:
 
 ### What is verified
 
-The checks are those of `jwtVerifier` below, with `https://<team>.cloudflareaccess.com` as the issuer and its `/cdn-cgi/access/certs` as the key list. Anything else gives `unauthenticated`:
+The checks are those of `jwtVerifier` from [`@ryusenkei/web/oidc`](#oidc-ryusenkeiweboidc), with `https://<team>.cloudflareaccess.com` as the issuer and its `/cdn-cgi/access/certs` as the key list. Anything else gives `unauthenticated`:
 
 - The signature is RS256 or ES256 and matches a key with the same `kid`
 - `aud` contains one of the configured AUD tags, and `iss` is `https://<team>.cloudflareaccess.com`
 - `exp` has not passed and `nbf` has (60 seconds of clock skew allowed)
 - A user token has `sub` and an email, and `email_verified` is not `false`
 
-### Other OIDC providers
+- A missing `team` or `aud` (including an array with no non-empty tag) throws `ConfigError`.
+- Key-list fetching, caching, and failures are those of `jwtVerifier` below.
 
-`jwtVerifier` checks a JWT from any OIDC provider (ID tokens, access tokens) and returns its claims:
+## OIDC (`@ryusenkei/web/oidc`)
+
+`jwtVerifier` checks a JWT from any OIDC provider (ID tokens, access tokens) and returns its claims. `@ryusenkei/web/access` uses it for Cloudflare Access. It uses Web Crypto, so it runs on Workers, Vercel, and Node.
 
 ```ts
-import { jwtFromRequest, jwtVerifier } from '@ryusenkei/web/access';
+import { jwtFromRequest, jwtVerifier } from '@ryusenkei/web/oidc';
 
 const verifier = jwtVerifier({ issuer: 'https://login.example.com', audience: env.CLIENT_ID, jwksUrl: 'https://login.example.com/.well-known/jwks.json' });
 const claims = await verifier.verify(jwtFromRequest(request, 'authorization'));
@@ -611,16 +642,12 @@ if (!claims.ok) return new Response(null, { status: 401 });
 
 - The key list is cached for an hour. A token with an unknown `kid` refetches it, at most once every 30 seconds, since Access rotates keys every six weeks and junk tokens must not trigger a fetch each time.
 - Imported keys are cached per `kid` and algorithm.
-- A missing `team` or `aud` (including an array with no non-empty tag) throws `ConfigError`, as does a missing `issuer`, `audience`, or `jwksUrl` for `jwtVerifier`.
+- A missing `issuer`, `audience`, or `jwksUrl` throws `ConfigError`.
 - A key-list fetch that fails, times out (5 seconds by default, `timeoutMs`), or can't be read throws `TransientError`.
 
 ## Versioning
 
-While the version is 0.x, a minor bump may break the API.
-
-0.6.0 was never published (its publish build failed); 0.6.1 is the first 0.6 release, with the same contents.
-
-0.7.0 moved `signWebhook` from `@ryusenkei/web/form/server` to `@ryusenkei/web/webhook`. Its third argument is now `{ now?, scheme? }` instead of the time in milliseconds.
+While the version is 0.x, a minor bump may break the API. See the [CHANGELOG](CHANGELOG.md) for what changed and how to migrate.
 
 ## License
 
