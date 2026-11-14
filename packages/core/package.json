@@ -1,6 +1,6 @@
 {
   "name": "@ryusenkei/core",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "実行環境に依らない基盤（Result、基盤の失敗の分類、構造化ログ、エラーの報告、トレース）。Workers、Node、Vercel、CLI で使う",
   "license": "MIT",
   "author": "RYUSENKEI",
