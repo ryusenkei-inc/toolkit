@@ -7,7 +7,7 @@ import type { Paragraph, Row } from './document.ts';
  */
 export type Disclosure = Readonly<{ disclosure: 'public'; value: string }> | Readonly<{ disclosure: 'on_request' }>;
 
-/** 運営者（会社の値。platform の `company` から渡す） */
+/** 運営者（会社の値。会社の値をまとめたパッケージなどから渡す） */
 export type Operator = Readonly<{
   /** 表示名（屋号、サービス名） */
   name: string;

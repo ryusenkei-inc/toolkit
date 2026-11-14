@@ -1,20 +1,5 @@
 import { ConfigError, TransientError } from '@ryusenkei/core';
-
-/** 保存した実体。本文は1回だけ読める（ストリームのため）。`contentType` は保存のときの種類で、なければ `null` */
-export type StoredBlob = Readonly<{ body: ReadableStream<Uint8Array>; contentType: string | null; size: number }>;
-
-export type BlobBody = string | ArrayBuffer | ArrayBufferView | ReadableStream<Uint8Array>;
-
-/** キーで実体を保存・取得する */
-export type BlobStore = Readonly<{
-  put(key: string, body: BlobBody, options?: Readonly<{ contentType?: string }>): Promise<void>;
-  /** 実体（なければ `null`） */
-  get(key: string): Promise<StoredBlob | null>;
-  /** 実体があるか（本文を取得せずに確かめる） */
-  exists(key: string): Promise<boolean>;
-  /** 1つか複数のキーを削除する。ないキーの削除は成功として扱う */
-  delete(keys: string | readonly string[]): Promise<void>;
-}>;
+import type { BlobBody, BlobStore } from '../blob/index.ts';
 
 type R2ObjectLike = { size: number; httpMetadata?: { contentType?: string } };
 
@@ -26,6 +11,11 @@ export type R2BucketBinding = {
   delete(keys: string | string[]): Promise<void>;
 };
 
+export type R2BlobStoreOptions = Readonly<{
+  /** binding の名前（`ConfigError` の `key` に入れる） */
+  name?: string;
+}>;
+
 // R2 の delete は1回に1,000キーまで
 const DELETE_MAX = 1000;
 
@@ -35,9 +25,9 @@ const DELETE_MAX = 1000;
  * - 複数のキーの削除は1,000キーずつに分ける
  * - ストリームを保存するには長さが要る（R2 の制約）。長さの分からない本文は `ArrayBuffer` にしてから渡す
  */
-export function r2BlobStore(bucket: R2BucketBinding | undefined): BlobStore {
+export function r2BlobStore(bucket: R2BucketBinding | undefined, options: R2BlobStoreOptions = {}): BlobStore {
   const call = async <T>(op: string, run: (b: R2BucketBinding) => Promise<T>): Promise<T> => {
-    if (!bucket) throw new ConfigError('R2 の binding が未設定');
+    if (!bucket) throw new ConfigError('R2 の binding が未設定', { key: options.name ?? 'binding' });
     try {
       return await run(bucket);
     } catch (e) {
@@ -45,8 +35,8 @@ export function r2BlobStore(bucket: R2BucketBinding | undefined): BlobStore {
     }
   };
   return {
-    async put(key, body, options = {}) {
-      await call('put', (b) => b.put(key, body, options.contentType ? { httpMetadata: { contentType: options.contentType } } : {}));
+    async put(key, body, putOptions = {}) {
+      await call('put', (b) => b.put(key, body, putOptions.contentType ? { httpMetadata: { contentType: putOptions.contentType } } : {}));
     },
     async get(key) {
       const object = await call('get', (b) => b.get(key));

@@ -1,9 +1,9 @@
 // 受け取りの処理の試験用の偽物（呼び出しの記録と失敗の注入）
 import { err, ok } from '@ryusenkei/core';
-import type { BotCheckLike, Destination, RateLimiterLike, Submission } from './server.ts';
+import type { BotCheck, Destination, RateLimiter, Submission } from './server.ts';
 
 /** 判定の結果を切り替えられる bot の判定 */
-export function fakeBotCheck(): BotCheckLike & { calls: { token: string | null | undefined; remoteIp?: string }[]; allow(value: boolean): void } {
+export function fakeBotCheck(): BotCheck<'rejected'> & { calls: { token: string | null | undefined; remoteIp?: string }[]; allow(value: boolean): void } {
   let allowed = true;
   const calls: { token: string | null | undefined; remoteIp?: string }[] = [];
   return {
@@ -17,7 +17,7 @@ export function fakeBotCheck(): BotCheckLike & { calls: { token: string | null |
 }
 
 /** 結果を切り替えられる回数の制限 */
-export function fakeRateLimiter(): RateLimiterLike & { keys: string[]; allow(value: boolean): void } {
+export function fakeRateLimiter(): RateLimiter<'rate_limited'> & { keys: string[]; allow(value: boolean): void } {
   let allowed = true;
   const keys: string[] = [];
   return {

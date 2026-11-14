@@ -1,6 +1,6 @@
 import { ConfigError } from '@ryusenkei/core';
 import { beforeAll, describe, expect, it } from 'vitest';
-import { jwtFromRequest, jwtVerifier, type JwtVerifierOptions } from './jwt.ts';
+import { jwtFromRequest, jwtVerifier, type JwtVerifierOptions } from './index.ts';
 
 const ISS = 'https://login.example.com';
 const JWKS = 'https://login.example.com/.well-known/jwks.json';

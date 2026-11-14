@@ -1,4 +1,4 @@
-import { ConfigError, log, TransientError } from '@ryusenkei/core';
+import { ConfigError, log, TransientError, UsageError } from '@ryusenkei/core';
 import { indexOf, type IndexName, type CountQuery, type CountRow, type EventCounts, type EventOf, type EventRecorder, type EventSchema } from '../analytics/index.ts';
 
 /** Workers Analytics Engine の binding（使う部分だけの型。`@cloudflare/workers-types` に依存しない） */
@@ -9,6 +9,8 @@ export type AnalyticsEngineRecorderOptions = {
   whenMissing?: 'ignore' | 'error';
   /** ない数の項目に入れる値（既定は0） */
   missingDouble?: number;
+  /** binding の名前（`ConfigError` の `key` に入れる） */
+  name?: string;
 };
 
 /**
@@ -22,7 +24,7 @@ export function analyticsEngineRecorder<B extends string, D extends string, I ex
   return {
     record(event) {
       if (!binding) {
-        if (options.whenMissing === 'error') throw new ConfigError('Analytics Engine の binding が未設定');
+        if (options.whenMissing === 'error') throw new ConfigError('Analytics Engine の binding が未設定', { key: options.name ?? 'binding' });
         return;
       }
       const values = event as Partial<Record<string, string | number>>;
@@ -40,14 +42,13 @@ export function analyticsEngineRecorder<B extends string, D extends string, I ex
   };
 }
 
-export type AnalyticsEngineCountsOptions<B extends string, D extends string, I extends string = never> = {
-  accountId: string;
-  /** API トークン（権限は Account Analytics の読み込み） */
-  token: string;
+export type AnalyticsEngineCountsOptions = {
+  /** アカウントの ID（未設定は `ConfigError`） */
+  accountId: string | undefined;
+  /** API トークン（権限は Account Analytics の読み込み。未設定は `ConfigError`） */
+  token: string | undefined;
   /** データセットの名前（wrangler の `analytics_engine_datasets` の `dataset`） */
   dataset: string;
-  /** 記録と同じ出来事の形 */
-  schema: EventSchema<B, D, I>;
   /** 1回の呼び出しの時間切れ（ミリ秒、既定は5000） */
   timeoutMs?: number;
   fetch?: typeof fetch;
@@ -63,14 +64,14 @@ const TIME_ZONE = /^[A-Za-z][A-Za-z0-9_+-]*(?:\/[A-Za-z0-9_+-]+)*$/;
 const UNSAFE = /['\\\u0000-\u001f\u007f]/;
 
 function checkedDate(value: string): string {
-  if (!DATE.test(value) || Number.isNaN(Date.parse(`${value}T00:00:00Z`)) || new Date(`${value}T00:00:00Z`).toISOString().slice(0, 10) !== value) throw new Error(`invalid_date: ${value}`);
+  if (!DATE.test(value) || Number.isNaN(Date.parse(`${value}T00:00:00Z`)) || new Date(`${value}T00:00:00Z`).toISOString().slice(0, 10) !== value) throw new UsageError('invalid_date', `日付の形の誤り: ${value}`);
   return value;
 }
 
 const nextDay = (day: string) => new Date(Date.parse(`${day}T00:00:00Z`) + 86_400_000).toISOString().slice(0, 10);
 
 const literal = (value: string) => {
-  if (UNSAFE.test(value)) throw new Error('invalid_value');
+  if (UNSAFE.test(value)) throw new UsageError('invalid_value', 'SQL に入れられない文字（引用符、逆斜線、制御文字）を含む値');
   return `'${value}'`;
 };
 
@@ -80,35 +81,40 @@ const literal = (value: string) => {
  * - 件数は `SUM(_sample_interval)` で標本を補正した値。`distinct` は値の種類の数で、標本を取ったときは少なめになる
  * - 日の区切りは条件の `timeZone`。書き込みから数秒〜数十秒で読める
  * - 行は1万行ずつ読み、20万行を超えたら例外（途中までの値で集計を上書きしないため）
- * - 状態が429と 5xx の応答は `TransientError`。SQL に入れる値は引用符と逆斜線と制御文字を拒む
+ * - 例外: 状態が429と 5xx は `TransientError`、401と403、未設定のアカウントの ID・トークン、不正なデータセットの名前は `ConfigError`
+ * - 呼ぶ側の誤りは `UsageError`。コードは日付・時間帯・値の誤り（`invalid_date`、`invalid_time_zone`、`invalid_value`）
+ *   宣言にない項目（`unknown_field`）、行の上限（`rows_exceeded`）、ほかの 4xx（`query_failed`）
+ * - SQL に入れる値は引用符と逆斜線と制御文字を拒む
  */
-export function analyticsEngineCounts<B extends string, D extends string, I extends string = never>(options: AnalyticsEngineCountsOptions<B, D, I>): EventCounts<B | IndexName<I>> {
+export function analyticsEngineCounts<B extends string, D extends string, I extends string = never>(schema: EventSchema<B, D, I>, options: AnalyticsEngineCountsOptions): EventCounts<B | IndexName<I>> {
   type K = B | IndexName<I>;
-  if (!DATASET.test(options.dataset)) throw new ConfigError('Analytics Engine のデータセットの名前が不正', { key: 'dataset' });
   const fetcher = options.fetch ?? fetch;
   const column = (key: K) => {
-    if (typeof options.schema.index === 'string' && key === options.schema.index) return 'index1';
-    const i = (options.schema.blobs as readonly string[]).indexOf(key);
-    if (i < 0) throw new Error(`unknown_field: ${key}`);
+    if (typeof schema.index === 'string' && key === schema.index) return 'index1';
+    const i = (schema.blobs as readonly string[]).indexOf(key);
+    if (i < 0) throw new UsageError('unknown_field', `宣言にない項目: ${key}`);
     return `blob${i + 1}`;
   };
-  const url = `https://api.cloudflare.com/client/v4/accounts/${encodeURIComponent(options.accountId)}/analytics_engine/sql`;
 
   async function page(sql: string): Promise<Record<string, unknown>[]> {
+    const url = `https://api.cloudflare.com/client/v4/accounts/${encodeURIComponent(options.accountId ?? '')}/analytics_engine/sql`;
     const res = await fetcher(url, { method: 'POST', headers: { authorization: `Bearer ${options.token}` }, body: sql, signal: AbortSignal.timeout(options.timeoutMs ?? DEFAULT_TIMEOUT_MS) });
     if (!res.ok) {
       const text = (await res.text().catch(() => '')).slice(0, 300);
       if (res.status === 429 || res.status >= 500) throw new TransientError(`Analytics Engine の SQL API の失敗: ${res.status}`, { cause: text });
-      throw new Error(`analytics_query_failed: ${res.status} ${text}`);
+      if (res.status === 401 || res.status === 403) throw new ConfigError(`Analytics Engine の SQL API のトークンの権限の不足: ${res.status}`, { key: 'token', cause: text });
+      throw new UsageError('query_failed', `Analytics Engine の SQL API が要求を受け付けない: ${res.status} ${text}`);
     }
     const body = (await res.json()) as { data?: unknown };
-    if (!Array.isArray(body.data)) throw new Error('analytics_query_failed: no data');
+    if (!Array.isArray(body.data)) throw new TransientError('Analytics Engine の SQL API の応答に data がない');
     return body.data as Record<string, unknown>[];
   }
 
   return {
     async count(query: CountQuery<K>): Promise<readonly CountRow<K>[]> {
-      if (!TIME_ZONE.test(query.timeZone)) throw new Error(`invalid_time_zone: ${query.timeZone}`);
+      if (!options.accountId || !options.token) throw new ConfigError('Analytics Engine の SQL API のアカウントの ID・トークンが未設定', { key: !options.accountId ? 'accountId' : 'token' });
+      if (!DATASET.test(options.dataset)) throw new ConfigError('Analytics Engine のデータセットの名前が不正', { key: 'dataset' });
+      if (!TIME_ZONE.test(query.timeZone)) throw new UsageError('invalid_time_zone', `時間帯の形の誤り: ${query.timeZone}`);
       const [from, to] = [checkedDate(query.from), checkedDate(query.to)];
       const tz = literal(query.timeZone);
       const groupBy = query.groupBy ?? [];
@@ -129,7 +135,7 @@ export function analyticsEngineCounts<B extends string, D extends string, I exte
         }
         if (data.length < PAGE_ROWS) return rows;
       }
-      throw new Error(`analytics_rows_exceeded: ${PAGE_ROWS * MAX_PAGES}`);
+      throw new UsageError('rows_exceeded', `集計の行が ${PAGE_ROWS * MAX_PAGES} 行を超えた（期間か groupBy を狭める）`);
     },
   };
 }

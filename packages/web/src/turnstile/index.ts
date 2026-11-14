@@ -1,4 +1,5 @@
-import { ConfigError, err, ok, TransientError, type Result } from '@ryusenkei/core';
+import { ConfigError, err, ok, TransientError } from '@ryusenkei/core';
+import type { BotCheck } from '../form/server.ts';
 
 const SITEVERIFY = 'https://challenges.cloudflare.com/turnstile/v0/siteverify';
 // トークンの上限の長さ（これを超えるものは判定の API に送らずに拒否）
@@ -14,9 +15,6 @@ export type BotCheckError =
   | 'rejected' // 判定で拒否（不正・期限切れ・使用済みのトークン）
   | 'hostname_mismatch' // トークンを発行したホスト名が許可の一覧にない
   | 'action_mismatch'; // トークンの action が期待と違う
-
-/** フォームの送信が人によるものかの判定（`@ryusenkei/web/form/server` の `botCheck` に渡せる） */
-export type BotCheck = Readonly<{ verify(input: { token: string | null | undefined; remoteIp?: string; action?: string }): Promise<Result<void, BotCheckError>> }>;
 
 /** Turnstile のテスト用の鍵（Cloudflare が公開している値） */
 export const TURNSTILE_TEST_KEYS = {
@@ -43,8 +41,8 @@ export type TurnstileOptions = {
   fetch?: typeof fetch;
 };
 
-/** Turnstile の siteverify による bot の判定 */
-export function turnstileBotCheck(options: TurnstileOptions): BotCheck {
+/** Turnstile の siteverify による bot の判定（`@ryusenkei/web/form/server` の `BotCheck`） */
+export function turnstileBotCheck(options: TurnstileOptions): BotCheck<BotCheckError> {
   const fetcher = options.fetch ?? fetch;
   return {
     async verify({ token, remoteIp, action }) {

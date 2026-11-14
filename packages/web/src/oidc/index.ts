@@ -1,4 +1,7 @@
+// OIDC のプロバイダーが発行する JWT の検証（ID トークン、アクセストークン、Cloudflare Access の JWT）
+// - Web Crypto だけで動く（Workers、Vercel、Node）。Cloudflare Access の認証は `@ryusenkei/web/access` がこれを使う
 import { ConfigError, err, ok, TransientError, type Result } from '@ryusenkei/core';
+import { decodeBytes } from '../internal/encoding.ts';
 
 /** 署名の形式 */
 export type JwtAlgorithm = 'RS256' | 'ES256';
@@ -40,13 +43,11 @@ const ALGORITHMS: Record<JwtAlgorithm, { kty: string; crv?: string; import: RsaH
   ES256: { kty: 'EC', crv: 'P-256', import: { name: 'ECDSA', namedCurve: 'P-256' }, verify: { name: 'ECDSA', hash: 'SHA-256' } },
 };
 
-const decode = (part: string): Uint8Array => {
-  const base64 = part.replace(/-/g, '+').replace(/_/g, '/');
-  return Uint8Array.from(atob(base64.padEnd(Math.ceil(base64.length / 4) * 4, '=')), (c) => c.charCodeAt(0));
-};
 const json = <T>(part: string): T | undefined => {
+  const bytes = decodeBytes(part, 'base64url');
+  if (!bytes) return undefined;
   try {
-    const value: unknown = JSON.parse(new TextDecoder().decode(decode(part)));
+    const value: unknown = JSON.parse(new TextDecoder().decode(bytes));
     return value && typeof value === 'object' && !Array.isArray(value) ? (value as T) : undefined;
   } catch {
     return undefined;
@@ -127,13 +128,9 @@ export function jwtVerifier(options: JwtVerifierOptions): JwtVerifier {
 
       const key = await keyOf(jwksUrl, header.kid, alg);
       if (!key) return err('unauthenticated');
-      let signature: Uint8Array;
-      try {
-        signature = decode(s);
-      } catch {
-        return err('unauthenticated');
-      }
-      const verified = await crypto.subtle.verify(ALGORITHMS[alg].verify, key, signature as BufferSource, new TextEncoder().encode(`${h}.${p}`)).catch(() => false);
+      const signature = decodeBytes(s, 'base64url');
+      if (!signature) return err('unauthenticated');
+      const verified = await crypto.subtle.verify(ALGORITHMS[alg].verify, key, signature, new TextEncoder().encode(`${h}.${p}`)).catch(() => false);
       if (!verified) return err('unauthenticated');
 
       const t = now() / 1000;

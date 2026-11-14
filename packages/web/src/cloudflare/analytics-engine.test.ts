@@ -1,4 +1,4 @@
-import { ConfigError, TransientError } from '@ryusenkei/core';
+import { ConfigError, TransientError, UsageError } from '@ryusenkei/core';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { defineEventSchema } from '../analytics/index.ts';
 import { analyticsEngineCounts, analyticsEngineRecorder, type AnalyticsEngineDataset } from './index.ts';
@@ -20,7 +20,7 @@ describe('analyticsEngineRecorder', () => {
     analyticsEngineRecorder({ writeDataPoint: () => { throw new Error('x'); } }, schema).record({ event: 'view' });
     expect(JSON.parse(String(warn.mock.calls[0]![0]))).toMatchObject({ event: 'analytics_write_failed' });
     expect(() => analyticsEngineRecorder(undefined, schema).record({ event: 'view' })).not.toThrow();
-    expect(() => analyticsEngineRecorder(undefined, schema, { whenMissing: 'error' }).record({ event: 'view' })).toThrow(ConfigError);
+    expect(() => analyticsEngineRecorder(undefined, schema, { whenMissing: 'error', name: 'EVENTS' }).record({ event: 'view' })).toThrow(expect.objectContaining({ key: 'EVENTS' }));
   });
 });
 
@@ -33,7 +33,7 @@ describe('analyticsEngineCounts', () => {
       sent.push({ url, init });
       return reply([{ day: '2026-11-14', k0: 'top', events: '12.0', uniq: '3' }]);
     }) as unknown as typeof fetch;
-    const counts = analyticsEngineCounts({ accountId: 'acc', token: 'tok', dataset: 'site_events', schema, fetch: fetcher });
+    const counts = analyticsEngineCounts(schema, { accountId: 'acc', token: 'tok', dataset: 'site_events', fetch: fetcher });
     const rows = await counts.count({ from: '2026-11-01', to: '2026-11-14', timeZone: 'Asia/Tokyo', groupBy: ['page'], where: { event: ['view', 'copy'] }, distinct: 'visitor' });
     expect(rows).toEqual([{ day: '2026-11-14', keys: { page: 'top' }, count: 12, distinct: 3 }]);
     expect(sent[0]!.url).toBe('https://api.cloudflare.com/client/v4/accounts/acc/analytics_engine/sql');
@@ -56,7 +56,7 @@ describe('analyticsEngineCounts', () => {
       bodies.push(String(init.body));
       return reply([{ day: '2026-11-14', k0: '4901234567894', events: 3, uniq: 1 }]);
     }) as unknown as typeof fetch;
-    const counts = analyticsEngineCounts({ accountId: 'acc', token: 'tok', dataset: 'd', schema: named, fetch: fetcher });
+    const counts = analyticsEngineCounts(named, { accountId: 'acc', token: 'tok', dataset: 'd', fetch: fetcher });
     const rows = await counts.count({ from: '2026-11-14', to: '2026-11-14', timeZone: 'UTC', groupBy: ['subject'], where: { subject: ['4901234567894'] }, distinct: 'subject' });
     expect(rows).toEqual([{ day: '2026-11-14', keys: { subject: '4901234567894' }, count: 3, distinct: 1 }]);
     expect(bodies[0]).toContain('index1 AS k0');
@@ -67,20 +67,23 @@ describe('analyticsEngineCounts', () => {
   it('1万行ごとに次の頁を読む', async () => {
     const full = Array.from({ length: 10_000 }, () => ({ day: '2026-11-14', events: 1 }));
     const fetcher = vi.fn(async () => reply(fetcher.mock.calls.length === 1 ? full : [{ day: '2026-11-14', events: 1 }]));
-    const rows = await analyticsEngineCounts({ accountId: 'acc', token: 'tok', dataset: 'd', schema, fetch: fetcher as unknown as typeof fetch }).count({ from: '2026-11-14', to: '2026-11-14', timeZone: 'UTC' });
+    const rows = await analyticsEngineCounts(schema, { accountId: 'acc', token: 'tok', dataset: 'd', fetch: fetcher as unknown as typeof fetch }).count({ from: '2026-11-14', to: '2026-11-14', timeZone: 'UTC' });
     expect(rows).toHaveLength(10_001);
     expect(String((fetcher.mock.calls[1] as unknown as [string, RequestInit])[1].body)).toContain('OFFSET 10000');
   });
 
-  it('429 と 5xx は TransientError、ほかの失敗と不正な値は例外', async () => {
-    const counts = (status: number) => analyticsEngineCounts({ accountId: 'acc', token: 'tok', dataset: 'd', schema, fetch: (async () => reply([], status)) as unknown as typeof fetch });
+  it('429 と 5xx は TransientError、401 と設定の不足は ConfigError、呼ぶ側の誤りは UsageError', async () => {
+    const counts = (status: number) => analyticsEngineCounts(schema, { accountId: 'acc', token: 'tok', dataset: 'd', fetch: (async () => reply([], status)) as unknown as typeof fetch });
     const query = { from: '2026-11-14', to: '2026-11-14', timeZone: 'UTC' };
     await expect(counts(429).count(query)).rejects.toBeInstanceOf(TransientError);
     await expect(counts(503).count(query)).rejects.toBeInstanceOf(TransientError);
-    await expect(counts(400).count(query)).rejects.toThrow('analytics_query_failed: 400');
-    await expect(counts(200).count({ ...query, where: { page: "x' OR 1=1" } })).rejects.toThrow('invalid_value');
-    await expect(counts(200).count({ ...query, from: '2026-02-30' })).rejects.toThrow('invalid_date');
-    await expect(counts(200).count({ ...query, timeZone: "UTC'" })).rejects.toThrow('invalid_time_zone');
-    expect(() => analyticsEngineCounts({ accountId: 'a', token: 't', dataset: 'bad-name', schema })).toThrow(ConfigError);
+    await expect(counts(401).count(query)).rejects.toMatchObject({ name: 'ConfigError', key: 'token' });
+    await expect(counts(400).count(query)).rejects.toMatchObject({ name: 'UsageError', code: 'query_failed' });
+    await expect(counts(200).count({ ...query, where: { page: "x' OR 1=1" } })).rejects.toMatchObject({ code: 'invalid_value' });
+    await expect(counts(200).count({ ...query, from: '2026-02-30' })).rejects.toMatchObject({ code: 'invalid_date' });
+    await expect(counts(200).count({ ...query, timeZone: "UTC'" })).rejects.toMatchObject({ code: 'invalid_time_zone' });
+    await expect(counts(200).count({ ...query, groupBy: ['nope' as 'page'] })).rejects.toBeInstanceOf(UsageError);
+    await expect(analyticsEngineCounts(schema, { accountId: 'a', token: 't', dataset: 'bad-name' }).count(query)).rejects.toMatchObject({ name: 'ConfigError', key: 'dataset' });
+    await expect(analyticsEngineCounts(schema, { accountId: undefined, token: 't', dataset: 'd' }).count(query)).rejects.toMatchObject({ name: 'ConfigError', key: 'accountId' });
   });
 });

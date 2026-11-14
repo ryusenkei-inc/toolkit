@@ -60,13 +60,18 @@ export type Span = {
   end(status?: SpanStatus): void;
 };
 
+export type StartSpanOptions = Readonly<{
+  attributes?: SpanAttributes;
+  /** 親の区間の文脈（なしは新しいトレース） */
+  parent?: TraceContext | null;
+}>;
+
 /**
  * 区間の出力先（ログ、OpenTelemetry など）
- * - `parent` は親の区間の文脈（なしは新しいトレース）
  * - 記録の対象は新しいトレースで実装が決め、子は親の `sampled` を継ぐ。対象の外の区間は `end` で何も出さない
  */
 export type Tracer = {
-  startSpan(name: string, attributes?: SpanAttributes, parent?: TraceContext | null): Span;
+  startSpan(name: string, options?: StartSpanOptions): Span;
 };
 
 export type LogTracerOptions = Readonly<{
@@ -82,9 +87,10 @@ export type LogTracerOptions = Readonly<{
 export function logTracer(options: LogTracerOptions = {}): Tracer {
   const sampleRate = options.sampleRate ?? 1;
   return {
-    startSpan(name, attributes = {}, parent = null) {
+    startSpan(name, options = {}) {
+      const parent = options.parent ?? null;
       const context: TraceContext = { traceId: parent?.traceId ?? newTraceId(), spanId: newSpanId(), sampled: parent ? parent.sampled : Math.random() < sampleRate };
-      const attrs: Record<string, unknown> = { ...attributes };
+      const attrs: Record<string, unknown> = { ...options.attributes };
       const started = performance.now();
       let ended = false;
       return {

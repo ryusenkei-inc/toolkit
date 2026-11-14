@@ -109,4 +109,4 @@ export function parseForm<F extends string>(form: Form<F>, input: FormData | Rea
   return problems.length ? { ok: false, problems } : { ok: true, values };
 }
 
-export { FORM_MESSAGES_JA, formMessage, problemMessage, type FormMessageCode, type FormMessages } from './messages.ts';
+export { FORM_MESSAGES_JA, formMessage, problemMessage, type FormMessageCode, type FormMessageOptions, type FormMessages } from './messages.ts';

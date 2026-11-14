@@ -1,7 +1,5 @@
 import { ConfigError, err, ok, type Result } from '@ryusenkei/core';
-import { jwtFromRequest, jwtVerifier, type JwtAlgorithm, type JwtClaims } from './jwt.ts';
-
-export { jwtFromRequest, jwtVerifier, type JwtAlgorithm, type JwtClaims, type JwtVerifier, type JwtVerifierOptions } from './jwt.ts';
+import { jwtFromRequest, jwtVerifier, type JwtAlgorithm, type JwtClaims } from '../oidc/index.ts';
 
 /**
  * 認証した利用者
@@ -34,7 +32,7 @@ const DEFAULT_HEADER = 'cf-access-jwt-assertion';
 
 /**
  * Cloudflare Access の JWT による認証
- * - 検証は `jwtVerifier`（発行元は `https://<team>.cloudflareaccess.com`、鍵の一覧はその `/cdn-cgi/access/certs`）
+ * - 検証は `@ryusenkei/web/oidc` の `jwtVerifier`（発行元は `https://<team>.cloudflareaccess.com`、鍵の一覧はその `/cdn-cgi/access/certs`）
  * - `email_verified` が `false` のログインは拒否する
  * - `groups` は JWT に含まれる場合だけ返す（含めるには Access の設定が要る）
  */

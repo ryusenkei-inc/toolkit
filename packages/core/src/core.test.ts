@@ -15,6 +15,8 @@ import {
   serializeError,
   setLogContext,
   TransientError,
+  isUsageError,
+  UsageError,
   type Result,
 } from './index.ts';
 
@@ -114,6 +116,18 @@ describe('印による判定', () => {
     class QuotaError extends TransientError {}
     expect(new QuotaError('q') instanceof TransientError).toBe(true);
     expect(new TransientError('t') instanceof QuotaError).toBe(false);
+  });
+});
+
+describe('UsageError', () => {
+  it('コードを持ち、分類は unknown で、別の複製の例外も判定する', () => {
+    const e = new UsageError('invalid_date', '日付の形が誤り: x');
+    expect(e).toMatchObject({ name: 'UsageError', code: 'invalid_date', message: '日付の形が誤り: x' });
+    expect(new UsageError('too_large').message).toBe('too_large');
+    expect(classifyFailure(e)).toEqual({ kind: 'unknown' });
+    expect(Object.assign(new Error('copy'), { [Symbol.for('@ryusenkei/core.UsageError')]: true }) instanceof UsageError).toBe(true);
+    expect(isUsageError(new ConfigError('c'))).toBe(false);
+    expect(serializeError(e)).toMatchObject({ name: 'UsageError', code: 'invalid_date' });
   });
 });
 

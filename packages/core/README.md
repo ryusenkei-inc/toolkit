@@ -35,19 +35,21 @@ Input problems are `{ path, code, params? }`. They carry no text; the UI looks t
 | --- | --- |
 | `TransientError` | May succeed on retry. `retryAfterSec` is optional; negative or non-finite values are ignored |
 | `ConfigError` | A missing or wrong setting. `key` names it |
+| `UsageError` | A mistake by the caller: a malformed argument, too much data, a request the other side refuses. `code` is a snake_case code such as `invalid_date`. It is classified as `unknown` |
 
 `classifyFailure(e)` returns a kind, so queues and scheduled jobs can use it as well as HTTP handlers:
 
 | Thrown value | Kind | Retry after |
 | --- | --- | --- |
 | `ConfigError` | `config` | — |
+| `UsageError` | `unknown` | — |
 | `TransientError` | `transient` | its `retryAfterSec`, or 5 seconds |
 | Durable Object error with `overloaded: true` | `transient` | 10 seconds |
 | Durable Object error with `retryable: true` | `transient` | 5 seconds |
 | `TimeoutError` / `AbortError` (fetch timeouts and aborts) | `transient` | 5 seconds |
 | anything else | `unknown` | — |
 
-Errors are recognized by a `Symbol.for` brand, not by class identity, so `classifyFailure`, `isTransientError`, `isConfigError`, and `instanceof` still work when two copies of this package end up in one bundle. Errors from `@ryusenkei/core` 0.2.x and `@ryusenkei/web` 0.5.x and earlier carry no brand and are classified as `unknown`.
+Errors are recognized by a `Symbol.for` brand, not by class identity, so `classifyFailure`, `isTransientError`, `isConfigError`, `isUsageError`, and `instanceof` still work when two copies of this package end up in one bundle. Errors from `@ryusenkei/core` 0.2.x and `@ryusenkei/web` 0.5.x and earlier carry no brand and are classified as `unknown`.
 
 `asTransient(e, message)` wraps an unknown error as a `TransientError` with the original as `cause`, and returns typed errors unchanged.
 
@@ -102,7 +104,7 @@ const tracer = logTracer({ sampleRate: sampleRateOf(env.TRACE_SAMPLE_RATE) });
 export default {
   fetch: (request, env) =>
     traceRequest(tracer, 'site.request', request, async () => {
-      const data = await withSpan('load', () => tracedFetch('https://api.example.com/items', {}, { fetcher: env.API.fetch.bind(env.API) }));
+      const data = await withSpan('load', () => tracedFetch('https://api.example.com/items', {}, { fetch: env.API.fetch.bind(env.API) }));
       log('info', 'loaded'); // carries traceId and spanId
       return render(await data.json());
     }),
@@ -117,7 +119,7 @@ From the root import (`@ryusenkei/core`, no AsyncLocalStorage):
 | `TraceContext` | `{ traceId, spanId, sampled }` (32 and 16 hex digits) |
 | `newTraceId()` / `newSpanId()` | Random IDs |
 | `sampleRateOf(value)` | Reads a sample rate from an environment string. Missing, out-of-range, and non-numeric values give 1 |
-| `Tracer`, `Span` | The port: `startSpan(name, attributes?, parent?)`, then `setAttributes` and `end(status?)` |
+| `Tracer`, `Span` | The port: `startSpan(name, { attributes?, parent? })`, then `setAttributes` and `end(status?)` |
 | `logTracer({ sampleRate? })` | Writes `{"event":"span","traceId","spanId","parentSpanId","name","durationMs","status","attributes"}` at `info` when a span ends. New traces are sampled at `sampleRate`; children follow their parent |
 
 From `@ryusenkei/core/trace` (AsyncLocalStorage, like `@ryusenkei/core/context`):
@@ -126,8 +128,8 @@ From `@ryusenkei/core/trace` (AsyncLocalStorage, like `@ryusenkei/core/context`)
 | --- | --- |
 | `traceEntry(tracer, name, fn, { traceparent?, attributes?, statusOf? })` | Runs `fn` in an entry span (a request, a scheduled job, a queue consumer). The parent is the running span, or else `traceparent` |
 | `traceRequest(tracer, name, request, handle)` | `traceEntry` for a `Request`: the parent comes from its `traceparent` header, the attributes are `http.method`, `http.path` (no query), and `http.status`, and a status of 500 or more is an error |
-| `withSpan(name, fn, attributes?)` | A child span for a step of the work |
-| `tracedFetch(url, init?, { fetcher?, propagate? })` | A `fetch` span with `http.method`, `http.host`, and `http.status`, which sends its `traceparent` so the callee's spans become its children. Pass `propagate: false` for third parties |
+| `withSpan(name, fn, { attributes? })` | A child span for a step of the work |
+| `tracedFetch(url, init?, { fetch?, propagate? })` | A `fetch` span with `http.method`, `http.host`, and `http.status`, which sends its `traceparent` so the callee's spans become its children. Pass `propagate: false` for third parties |
 | `annotateSpan(attributes)` | Adds attributes to the running span |
 | `currentTraceContext()` / `currentTraceparent()` / `withTraceparent(headers?)` | The running span, for passing it on by hand |
 
@@ -137,9 +139,14 @@ From `@ryusenkei/core/trace` (AsyncLocalStorage, like `@ryusenkei/core/context`)
 - Attributes go to logs: keep out bodies, queries, and email addresses.
 - On Workers, durations count only time spent waiting on I/O, because the clock doesn't advance during CPU work.
 
+## Conventions
+
+- Required arguments are positional; optional settings go in a trailing options object.
+- Injected clocks are `now: () => number` (milliseconds), and injected `fetch` functions are named `fetch`.
+
 ## Versioning
 
-While the version is 0.x, a minor bump may break the API. 0.3.0 moved the HTTP parts (`failureResponse`, `withRequestId`) to `@ryusenkei/web`.
+While the version is 0.x, a minor bump may break the API. See the [CHANGELOG](CHANGELOG.md) for what changed and how to migrate.
 
 ## License
 

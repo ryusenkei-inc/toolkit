@@ -15,11 +15,15 @@ const OWN_KEYS_SKIPPED = new Set(['name', 'message', 'stack', 'cause']);
  * - 例外が持つ項目（`ConfigError` の `key`、`TransientError` の `retryAfterSec` など）も残す
  * - `Error` でない値は名前 `NonError` と文字列
  */
-export function serializeError(e: unknown, depth = 0): SerializedError {
+export function serializeError(e: unknown): SerializedError {
+  return serialize(e, 0);
+}
+
+function serialize(e: unknown, depth: number): SerializedError {
   if (!(e instanceof Error)) return { name: 'NonError', message: String(e).slice(0, MESSAGE_MAX) };
   const own = Object.fromEntries(Object.entries(e).filter(([k, v]) => !OWN_KEYS_SKIPPED.has(k) && v !== undefined && typeof v !== 'function'));
   const stack = e.stack?.split('\n').slice(0, STACK_LINES).join('\n').slice(0, STACK_MAX);
-  const cause = depth === 0 && e.cause !== undefined ? serializeError(e.cause, 1) : undefined;
+  const cause = depth === 0 && e.cause !== undefined ? serialize(e.cause, 1) : undefined;
   return { ...own, name: e.name, message: e.message.slice(0, MESSAGE_MAX), ...(stack && { stack }), ...(cause && { cause }) };
 }
 
