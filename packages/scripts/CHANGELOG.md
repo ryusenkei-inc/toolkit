@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.5.1
+
+### Fixed
+
+- `envCli`: in a git worktree without `.env`, it reads the main checkout's `.env` (found with `git rev-parse --git-common-dir`). A `.env` at `root` still comes first, and with neither it exits with 1 as before. It prints which file it read to stderr, without values.
+
 ## 0.5.0
 
 ### Added

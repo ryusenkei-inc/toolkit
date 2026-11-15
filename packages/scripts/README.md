@@ -54,6 +54,18 @@ node scripts/env.ts check                        # before a full push
 
 When you change one value, send that key with `--only`. A full `push` overwrites every secret with the value in your `.env`, so a stale `.env` breaks production. Run `check` first.
 
+### Running from a git worktree
+
+A git worktree usually has no `.env`; only the main checkout does. The CLI looks for `.env` in this order:
+
+1. `.env` at `root` (the worktree root)
+2. `.env` at the root of the main checkout, found with `git rev-parse --git-common-dir`
+3. Neither: exits with 1, as before
+
+It prints which file it read to stderr (`env  <path>（作業ツリー）` or `（本体のチェックアウト）`), never the values. It doesn't copy `.env` into the worktree.
+
+The main checkout's `.env` may be newer or older than what the worktree's branch expects. Run `check` before deploying or pushing from a worktree.
+
 Targets:
 
 | Target | Sent with |

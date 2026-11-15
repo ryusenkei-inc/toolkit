@@ -1,7 +1,7 @@
 // ルートの `.env` の CLI の核。配信先（`targets`）とリポ独自のコマンドは、各リポの `scripts/env.ts` から渡す
 import type { SpawnSyncOptions } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { basename, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseEnv } from 'node:util';
 import { DRIFT_LABELS, driftStateOf, fingerprintOf, isDrift, newFingerprintRecord, parseFingerprintRecord, type FingerprintRecord, type RemoteState } from './env-drift.ts';
@@ -84,6 +84,27 @@ export function pushPlan(values: EnvValues, targets: Record<string, Target[]>, o
   return { skips, items };
 }
 
+/** 読む `.env`。`from` は作業ツリーのルートのものか、本体のチェックアウトのものか */
+export type EnvFile = { path: string; from: 'worktree' | 'main' };
+
+const gitCommonDirOf = (cwd: string): string | null => execOutputSync('git', ['rev-parse', '--git-common-dir'], { cwd, stdio: ['ignore', 'pipe', 'ignore'] });
+
+/**
+ * 読む `.env` を探す。見つからなければ `undefined`
+ * - `root` の `.env` があればそれ
+ * - なければ `git rev-parse --git-common-dir` から本体のチェックアウトのルートを求め、その `.env`（git worktree には `.env` がない）
+ */
+export function findEnvFile(root: string, gitCommonDir: (cwd: string) => string | null = gitCommonDirOf): EnvFile | undefined {
+  const own = join(root, '.env');
+  if (existsSync(own)) return { path: own, from: 'worktree' };
+  const common = gitCommonDir(root);
+  // 本体の `.git` のときだけ（bare のリポには作業ツリーがない）
+  if (!common || basename(common) !== '.git') return undefined;
+  const main = resolve(root, common, '..');
+  const path = join(main, '.env');
+  return main !== resolve(root) && existsSync(path) ? { path, from: 'main' } : undefined;
+}
+
 /** `--only <値>`・`--only=<値>`（複数可）と、ほかの引数 */
 export function onlyArgs(args: readonly string[]): { only: string[]; rest: string[] } {
   const only: string[] = [];
@@ -103,13 +124,18 @@ export function onlyArgs(args: readonly string[]): { only: string[]; rest: strin
  */
 export async function envCli(config: EnvConfig, argv = process.argv.slice(2)): Promise<never> {
   const root = typeof config.root === 'string' ? config.root : fileURLToPath(config.root);
-  const envPath = join(root, '.env');
+  let envFile: EnvFile | undefined;
   const values = (): EnvValues => {
-    if (!existsSync(envPath)) {
-      console.error('.env が未作成（.env.example を複製して値を設定）');
-      process.exit(1);
+    if (!envFile) {
+      envFile = findEnvFile(root);
+      if (!envFile) {
+        console.error('.env が未作成（.env.example を複製して値を設定）');
+        process.exit(1);
+      }
+      // 標準出力は run のコマンドが使うので、標準エラーに出す
+      console.error(`env  ${envFile.path}（${envFile.from === 'worktree' ? '作業ツリー' : '本体のチェックアウト'}）`);
     }
-    return parseEnv(readFileSync(envPath, 'utf8'));
+    return parseEnv(readFileSync(envFile.path, 'utf8'));
   };
   const run = (args: string[], extra: EnvValues = {}): number => {
     const { env, command } = splitAssignments(args);
