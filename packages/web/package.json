@@ -81,6 +81,14 @@
     "./seo": {
       "types": "./dist/seo/index.d.ts",
       "default": "./dist/seo/index.js"
+    },
+    "./session": {
+      "types": "./dist/session/index.d.ts",
+      "default": "./dist/session/index.js"
+    },
+    "./invite": {
+      "types": "./dist/invite/index.d.ts",
+      "default": "./dist/invite/index.js"
     }
   },
   "files": [

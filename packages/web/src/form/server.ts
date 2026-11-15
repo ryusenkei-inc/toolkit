@@ -23,10 +23,16 @@ export type RateLimiter<E extends string = string> = Readonly<{ limit(key: strin
 export type AuthenticateInput = Readonly<{ request: Request; field(name: string): string | undefined }>;
 
 /**
+ * 認証を通った主体
+ * - `credential`: 認証に使ったトークン（ID トークンなど）。届け先が自分で検証し直すときに `httpDestination` の `credential` で渡す
+ */
+export type Authenticated = Readonly<{ subject: string; credential?: string }>;
+
+/**
  * 送信した主体（LINE のユーザーなど）の認証のポート（`jwtAuthenticator` が実装）
  * - 認証できなければ `E` のコードで返し、検証の API の障害は `TransientError`、設定の不足は `ConfigError` を投げる
  */
-export type Authenticator<E extends string = string> = Readonly<{ authenticate(input: AuthenticateInput): Promise<Result<Readonly<{ subject: string }>, E>> }>;
+export type Authenticator<E extends string = string> = Readonly<{ authenticate(input: AuthenticateInput): Promise<Result<Authenticated, E>> }>;
 
 /**
  * 主体ごとに1回だけ受け付けるためのポート
@@ -53,8 +59,12 @@ export type DailyQuota = Readonly<{ take(key: string, limit: number): Promise<Re
 /** 回数の制限と日ごとの上限のキーを決める関数に渡す値 */
 export type SubmissionKeyInput = Readonly<{ ip: string | undefined; form: string; subject: string | undefined }>;
 
-/** 受け取った送信。`order` は宣言の項目の順、`subject` は認証した主体（`authenticator` があるとき） */
-export type Submission = Readonly<{ form: string; values: FormValues; order: readonly string[]; receivedAt: string; subject?: string }>;
+/**
+ * 受け取った送信
+ * - `order` は宣言の項目の順、`subject` は認証した主体（`authenticator` があるとき）
+ * - `credential` は認証に使ったトークン（`Authenticated` の `credential`）。ログと `webhookDestination` の本文には出さない
+ */
+export type Submission = Readonly<{ form: string; values: FormValues; order: readonly string[]; receivedAt: string; subject?: string; credential?: string }>;
 
 /** 届け先。失敗は値で返すか、例外を投げる（どちらも「その届け先は失敗」として扱う）。`name` は届け先の間で重ならないようにする */
 export type Destination = Readonly<{ name: string; deliver(submission: Submission, ctx: { requestId: string }): Promise<Result<unknown, string>> }>;
@@ -171,10 +181,11 @@ export function submissionHandler(options: SubmissionHandlerOptions): (request: 
       if (!parsed.ok) return json({ ok: false, error: 'invalid', problems: parsed.problems, requestId }, 400, requestId);
 
       let subject: string | undefined;
+      let credential: string | undefined;
       if (options.authenticator) {
         const auth = await options.authenticator.authenticate({ request, field });
         if (!auth.ok) return json({ ok: false, error: 'unauthenticated', requestId }, 401, requestId);
-        subject = auth.value.subject;
+        ({ subject, credential } = auth.value);
       }
       const ip = (options.clientIp ?? defaultClientIp)(request);
       const keyInput: SubmissionKeyInput = { ip, form: name, subject };
@@ -211,7 +222,7 @@ export function submissionHandler(options: SubmissionHandlerOptions): (request: 
         }
       }
 
-      const submission: Submission = { form: name, values: parsed.values, order: Object.keys(form.fields), receivedAt: new Date(now()).toISOString(), ...(subject !== undefined && { subject }) };
+      const submission: Submission = { form: name, values: parsed.values, order: Object.keys(form.fields), receivedAt: new Date(now()).toISOString(), ...(subject !== undefined && { subject }), ...(credential !== undefined && { credential }) };
       const results = await Promise.all(
         options.destinations.map(async (d) => {
           try {
@@ -321,7 +332,8 @@ const DEFAULT_WEBHOOK_TIMEOUT_MS = 3000;
 
 /**
  * webhook で届ける（2xx を成功とする）
- * - `json` の本文は `{ event: 'form.submitted', id, form, values, order, receivedAt }`
+ * - `json` の本文は `{ event: 'form.submitted', id, form, values, order, receivedAt, subject? }`
+ * - 認証のトークン（`credential`）は本文に入れない
  * - `id` は送信ごとの UUID で、受け手の重複の判定に使う
  * - 転送（3xx）は追わない。署名と本文を、登録のない宛先へ送らないため
  */
@@ -333,7 +345,8 @@ export function webhookDestination(options: WebhookDestinationOptions): Destinat
     name: options.name ?? 'webhook',
     async deliver(submission) {
       if (signed && !secrets.length) throw new ConfigError('webhook の署名の鍵が未設定', { key: 'secret' });
-      const payload = options.format === 'slack' ? { text: notificationText(submission, options.copy ?? { labels: {} }) } : { event: 'form.submitted', id: crypto.randomUUID(), ...submission };
+      const { credential: _, ...fields } = submission;
+      const payload = options.format === 'slack' ? { text: notificationText(submission, options.copy ?? { labels: {} }) } : { event: 'form.submitted', id: crypto.randomUUID(), ...fields };
       const body = JSON.stringify(payload);
       const headers: Record<string, string> = { 'content-type': 'application/json' };
       if (signed) headers[options.header ?? 'x-signature'] = await signWebhook(secrets, { method: 'POST', url: options.url, body }, { ...(options.scheme && { scheme: options.scheme }) });
@@ -352,6 +365,12 @@ export type HttpDestinationOptions = {
   headers?: Readonly<Record<string, string>>;
   /** 本文（既定は項目の値の JSON） */
   body?: (submission: Submission) => unknown;
+  /**
+   * 認証に使ったトークン（`Submission` の `credential`）を転送先へ渡す。転送先が自分で検証し直すときに使う
+   * - `{ field }`: 本文の項目に入れる（本文はオブジェクトに限る）
+   * - `{ header }`: ヘッダーに入れる（`authorization` は `Bearer <token>`）
+   */
+  credential?: Readonly<{ field: string }> | Readonly<{ header: string }>;
   timeoutMs?: number;
   fetch?: typeof fetch;
 };
@@ -361,6 +380,8 @@ export type HttpDestinationOptions = {
  * - 2xx を成功とし、応答の JSON（読めなければ `null`）を届け先の値にする。`acceptedId` で受付の番号を応答に入れられる
  * - 2xx 以外は `status_<状態>` の失敗。転送（3xx）は追わない
  * - 相関の ID を `x-request-id` で渡す
+ * - `credential` があるのに送信にトークンがなければ `ConfigError`（`key: 'credential'`）
+ * - `credential` の `field` で、本文がオブジェクトでなければ `UsageError`（`credential_field_needs_object`）
  */
 export function httpDestination(options: HttpDestinationOptions): Destination {
   const fetcher = options.fetch ?? fetch;
@@ -368,11 +389,49 @@ export function httpDestination(options: HttpDestinationOptions): Destination {
     name: options.name ?? 'http',
     async deliver(submission, ctx) {
       if (!options.url) throw new ConfigError('転送先の URL が未設定', { key: 'url' });
-      const body = JSON.stringify(options.body ? options.body(submission) : submission.values);
-      const headers = { ...options.headers, 'content-type': 'application/json', [REQUEST_ID_HEADER]: ctx.requestId };
+      let payload = options.body ? options.body(submission) : submission.values;
+      const extra: Record<string, string> = {};
+      if (options.credential) {
+        const token = submission.credential;
+        if (!token) throw new ConfigError('転送する認証のトークンがない（authenticator がトークンを返さない）', { key: 'credential' });
+        if ('field' in options.credential) {
+          if (!payload || typeof payload !== 'object' || Array.isArray(payload)) throw new UsageError('credential_field_needs_object', '認証のトークンを入れる本文がオブジェクトでない');
+          payload = { ...payload, [options.credential.field]: token };
+        } else {
+          const name = options.credential.header;
+          extra[name] = name.toLowerCase() === 'authorization' ? `Bearer ${token}` : token;
+        }
+      }
+      const body = JSON.stringify(payload);
+      const headers = { ...options.headers, ...extra, 'content-type': 'application/json', [REQUEST_ID_HEADER]: ctx.requestId };
       const res = await fetcher(options.url, { method: 'POST', headers, body, redirect: 'manual', signal: AbortSignal.timeout(options.timeoutMs ?? DEFAULT_WEBHOOK_TIMEOUT_MS) });
       if (!res.ok) return { ok: false, error: `status_${res.status}` };
       return { ok: true, value: (await res.json().catch(() => null)) as unknown };
+    },
+  };
+}
+
+/** `afterDelivery` の続きの処理に渡す値。`value` は届け先が返した値 */
+export type AfterDeliveryInput = Readonly<{ submission: Submission; value: unknown; requestId: string }>;
+
+/**
+ * 届け先の成功の後に処理を続ける（保存の成功の後にだけ送る LINE の Push など）
+ * - 届け先が失敗したら続きを呼ばない
+ * - 続きの失敗はログ（`form_after_delivery_failed`）に出し、届け先の結果は変えない（保存は済んでいるため）
+ * - 名前は元の届け先と同じ
+ */
+export function afterDelivery(destination: Destination, then: (input: AfterDeliveryInput) => Promise<void>): Destination {
+  return {
+    name: destination.name,
+    async deliver(submission, ctx) {
+      const result = await destination.deliver(submission, ctx);
+      if (!result.ok) return result;
+      try {
+        await then({ submission, value: result.value, requestId: ctx.requestId });
+      } catch (e) {
+        log('warn', 'form_after_delivery_failed', { requestId: ctx.requestId, form: submission.form, destination: destination.name, error: e });
+      }
+      return result;
     },
   };
 }
@@ -390,6 +449,7 @@ export type JwtAuthenticatorOptions = {
  * JWT（LINE の ID トークンなど）で送信した主体を認証する（`Authenticator`）
  * - 検証は `@ryusenkei/web/oidc` の `jwtVerifier`・`lineIdTokenVerifier` に任せる
  * - トークンがない、検証を通らない、主体が取れないときは `unauthenticated`
+ * - 検証を通ったトークンを `credential` で返す（`httpDestination` の `credential` で転送先へ渡せる）
  */
 export function jwtAuthenticator(verifier: JwtVerifier, options: JwtAuthenticatorOptions = {}): Authenticator<'unauthenticated'> {
   const field = options.field === undefined ? 'idToken' : options.field;
@@ -400,7 +460,7 @@ export function jwtAuthenticator(verifier: JwtVerifier, options: JwtAuthenticato
       const verified = await verifier.verify(token);
       if (!verified.ok) return err('unauthenticated');
       const subject = subjectOf(verified.value);
-      return subject ? ok({ subject }) : err('unauthenticated');
+      return subject && token ? ok({ subject, credential: token }) : err('unauthenticated');
     },
   };
 }

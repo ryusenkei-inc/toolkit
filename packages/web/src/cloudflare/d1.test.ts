@@ -2,7 +2,9 @@
 import { TransientError } from '@ryusenkei/core';
 import { describe, expect, it } from 'vitest';
 import { dailyQuotaContract, submissionOnceContract } from '../form/contract.ts';
-import { d1DailyQuota, d1SubmissionOnce, dailyQuotaTableSql, submissionOnceTableSql, type D1DatabaseBinding, type D1StatementLike } from './d1.ts';
+import { inviteStoreContract } from '../invite/contract.ts';
+import { sessionStoreContract } from '../session/contract.ts';
+import { d1DailyQuota, d1InviteStore, d1SessionStore, d1SubmissionOnce, dailyQuotaTableSql, inviteTableSql, sessionTableSql, submissionOnceTableSql, type D1DatabaseBinding, type D1StatementLike } from './d1.ts';
 
 type Value = string | number | null;
 type SqliteStatement = { get(...values: Value[]): unknown; run(...values: Value[]): { changes: number | bigint } };
@@ -33,12 +35,18 @@ const open = (sql: string): D1DatabaseBinding => {
 describe.skipIf(!sqlite)('D1 のアダプター（SQLite）', () => {
   submissionOnceContract('d1', () => d1SubmissionOnce(open(submissionOnceTableSql())));
   dailyQuotaContract('d1', (now) => d1DailyQuota(open(dailyQuotaTableSql()), { timeZone: 'Asia/Tokyo', now }));
+  sessionStoreContract('d1', () => d1SessionStore(open(sessionTableSql())));
+  inviteStoreContract('d1', () => d1InviteStore(open(inviteTableSql())));
 
   it('表の名前を変えられ、名前の誤りは UsageError', async () => {
     const once = d1SubmissionOnce(open(submissionOnceTableSql('survey_once')), { table: 'survey_once' });
     expect((await once.claim('s', 'u')).ok).toBe(true);
     expect(() => submissionOnceTableSql('x; DROP TABLE y')).toThrow(expect.objectContaining({ name: 'UsageError', code: 'invalid_table' }));
     expect(() => d1DailyQuota(undefined, { timeZone: 'Asia/Tokyo', table: 'a b' })).toThrow(expect.objectContaining({ code: 'invalid_table' }));
+    const sessions = d1SessionStore(open(sessionTableSql('member_sessions')), { table: 'member_sessions' });
+    await sessions.insert('k', { subject: 'm', data: '{}', createdAt: 1, refreshedAt: 1, expiresAt: 2 });
+    expect(await sessions.get('k')).not.toBeNull();
+    expect(() => inviteTableSql('a-b')).toThrow(expect.objectContaining({ code: 'invalid_table' }));
   });
 });
 
@@ -57,6 +65,9 @@ describe('D1 のアダプターの失敗', () => {
   it('D1 の失敗は TransientError', async () => {
     await expect(d1SubmissionOnce(broken).has('s', 'u')).rejects.toBeInstanceOf(TransientError);
     await expect(d1DailyQuota(broken, { timeZone: 'Asia/Tokyo' }).take('k', 1)).rejects.toBeInstanceOf(TransientError);
+    await expect(d1SessionStore(broken).get('k')).rejects.toBeInstanceOf(TransientError);
+    await expect(d1InviteStore(broken).use('k', 1)).rejects.toBeInstanceOf(TransientError);
+    await expect(d1InviteStore(undefined, { name: 'DB' }).find('k')).rejects.toMatchObject({ name: 'ConfigError', key: 'DB' });
   });
 
   it('時間帯の名前の誤りは UsageError', () => {

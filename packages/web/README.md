@@ -12,18 +12,20 @@ pnpm add @ryusenkei/core @ryusenkei/web
 | --- | --- |
 | `@ryusenkei/web` | HTTP failure responses, the request ID, and CORS |
 | `@ryusenkei/web/form` | Field declarations, sanitizing, validation |
-| `@ryusenkei/web/form/server` | The submission handler, its destinations (email, webhook), and sign-in for submissions |
+| `@ryusenkei/web/form/server` | The submission handler, its destinations (email, webhook, HTTP), and sign-in for submissions |
 | `@ryusenkei/web/form/client` | Submitting from the page |
 | `@ryusenkei/web/form/testing` | Fakes for the bot check, rate limiter, sign-in, and destinations; in-memory once-per-person and daily limits |
 | `@ryusenkei/web/legal` | Privacy policy, 特定商取引法 notice, advertising disclosure, operator details |
 | `@ryusenkei/web/mail` | The `Mail` shape, the `Mailer` interface, and the checks before sending |
 | `@ryusenkei/web/mail/testing` | An in-memory `Mailer` |
 | `@ryusenkei/web/blob` | The `BlobStore` port and an in-memory store |
+| `@ryusenkei/web/session` | Site sessions: signed cookies, cached sign-in results, and the `SessionStore` port with an in-memory store |
+| `@ryusenkei/web/invite` | One-time invite codes that expire, stored as hashes: the `InviteStore` port and an in-memory store |
 | `@ryusenkei/web/webhook` | Signing and verifying webhooks and app-to-app requests (HMAC-SHA256) |
 | `@ryusenkei/web/analytics` | Event recording and count ports, cookieless visitor keys, an in-memory store |
 | `@ryusenkei/web/analytics/client` | Sending events from the page with `sendBeacon` |
 | `@ryusenkei/web/seo` | Canonical URLs, meta tags, JSON-LD, sitemaps, `robots.txt` |
-| `@ryusenkei/web/cloudflare` | Workers bindings: Rate Limiting, Email Service, R2, and Analytics Engine |
+| `@ryusenkei/web/cloudflare` | Workers bindings: Rate Limiting, Email Service, R2, Analytics Engine, and D1 stores |
 | `@ryusenkei/web/turnstile` | Turnstile's server-side check |
 | `@ryusenkei/web/access` | Cloudflare Access authentication |
 | `@ryusenkei/web/oidc` | JWT verification for any OIDC provider |
@@ -176,17 +178,20 @@ How submissions are read and logged:
 - With several forms, the `form` field picks one; with one form it can be omitted. Form data and JSON bodies are both accepted.
 - The rate-limit key is `form:<client IP>` (`cf-connecting-ip`, then the first `x-forwarded-for`). `rateLimitKey: ({ ip, form, subject }) => string` changes it, for example to share one limiter between products.
 - `now` (`() => number`) replaces the clock for `receivedAt`.
-- Submitted values and the signed-in subject are never logged; logs carry the form name, destination names, and the request ID.
+- Submitted values, the signed-in subject, and its token are never logged; logs carry the form name, destination names, and the request ID.
 
 Destinations:
 
 - `mailDestination`: sends `notificationText` (each field as `■ label` and its value, in declared order; `multiChoice` values joined with `copy.separator`, default `、`). Replies go to the submitter's `email` and `name`. `name` (default `mail`) tells several mail destinations apart.
-- `webhookDestination`: posts JSON (`{ event: 'form.submitted', id, form, values, order, receivedAt }`, where `id` is a UUID per submission for deduplication) or Slack text, with a 3-second timeout and no redirects.
+- `webhookDestination`: posts JSON (`{ event: 'form.submitted', id, form, values, order, receivedAt, subject? }`, where `id` is a UUID per submission for deduplication) or Slack text, with a 3-second timeout and no redirects. The sign-in token (`credential`) is left out.
   - With `secret`, it adds `x-signature: t=<seconds>,v1=<HMAC-SHA256>`, signed by `signWebhook` from [`@ryusenkei/web/webhook`](#webhooks-ryusenkeiwebwebhook). The receiver checks it with `verifyWebhookRequest`.
   - A `secret` that is present but empty (such as an unset environment variable) throws `ConfigError` instead of sending unsigned. Leave the option out to send unsigned.
   - `header` renames the header, and `scheme` changes the format. During a key rotation, pass `secret` as an array (new key first); each key adds its own `v1`.
   - `name` (default `webhook`) tells several webhooks apart in logs and results. `copy.heading` puts a line above the Slack text.
 - `httpDestination`: forwards the values as JSON to another API, for example from a site's server to a CMS that stores the submission. It sends `headers` (such as an API key) and `x-request-id`; a 2xx answer is success, and its JSON body becomes the destination's value. `body` changes what is sent.
+  - `credential` passes on the token the submitter signed in with (`submission.credential`, such as a LINE ID token), so the receiving API can verify it itself: `{ field: 'idToken' }` adds it to the JSON body (the body must be an object), and `{ header: 'authorization' }` sends `Bearer <token>` (any other header gets the bare token).
+  - With `credential` but no token on the submission (no `authenticator`, or one that returns no `credential`), it throws `ConfigError` (`key: 'credential'`).
+- `afterDelivery(destination, then)` runs `then({ submission, value, requestId })` only after `destination` succeeds, for example a LINE push after the answer is stored. A failure in `then` is logged as `form_after_delivery_failed` and doesn't change the result.
 - Write your own as `{ name, deliver(submission) }`. Names must be unique.
 
 `acceptedId(results)` picks the `id` for the accepted response from the results by destination name (`{ ok: true, value }` or `{ ok: false, reason }`), for example the number a store returned:
@@ -242,8 +247,8 @@ export const handleSurvey = (env: Env) => {
 
 The page sends the ID token with the answers: `submitForm(url, { form: 'survey', idToken: liff.getIDToken(), found: ['sns', 'other'], foundOther: '…' })`.
 
-- `authenticator` takes the `Authenticator` port: `authenticate({ request, field })` returning `{ subject }` or an error code (401 `unauthenticated`). The subject reaches destinations as `submission.subject`.
-  - `jwtAuthenticator(verifier, { field, header, subject })` reads a JWT from the `idToken` body field (`field`), or first from a header (`header`, such as `'authorization'` for `Bearer <token>`; `field: null` reads only the header). It verifies the JWT with a `JwtVerifier` from [`@ryusenkei/web/oidc`](#oidc-ryusenkeiweboidc) and takes `sub` as the subject (`subject` changes that).
+- `authenticator` takes the `Authenticator` port: `authenticate({ request, field })` returning `{ subject, credential? }` or an error code (401 `unauthenticated`). The subject reaches destinations as `submission.subject`, and the token as `submission.credential`.
+  - `jwtAuthenticator(verifier, { field, header, subject })` reads a JWT from the `idToken` body field (`field`), or first from a header (`header`, such as `'authorization'` for `Bearer <token>`; `field: null` reads only the header). It verifies the JWT with a `JwtVerifier` from [`@ryusenkei/web/oidc`](#oidc-ryusenkeiweboidc), takes `sub` as the subject (`subject` changes that), and returns the token as `credential`.
   - The token field isn't declared in the form, so it never reaches `values`.
 - `once: { store, scope? }` accepts one submission per subject and scope (default scope: the form name). It needs `authenticator`; without one, `submissionHandler` throws `UsageError` (`once_without_authenticator`).
   - `store` is the `SubmissionOnce` port: `has(scope, subject)`, `claim(scope, subject)` (`duplicate` when taken, and only one of several concurrent claims wins), and `release(scope, subject)`.
@@ -264,9 +269,99 @@ An accepted result has `id` when the handler set one. A plain object instead of 
 
 ### Testing (`@ryusenkei/web/form/testing`)
 
-`fakeBotCheck()` and `fakeRateLimiter()` record calls and switch with `allow(false)`. `fakeAuthenticator(subject)` signs in as `subject` and switches with `as(subject | null)` (`null` fails). `memoryDestination()` keeps what it received and fails with `fail('value' | 'throw')`.
+`fakeBotCheck()` and `fakeRateLimiter()` record calls and switch with `allow(false)`. `fakeAuthenticator(subject, { credential? })` signs in as `subject` and switches with `as(subject | null)` (`null` fails). `memoryDestination()` keeps what it received and fails with `fail('value' | 'throw')`.
 
 `memorySubmissionOnce()` and `memoryDailyQuota({ timeZone, now? })` implement `SubmissionOnce` and `DailyQuota` in memory, for tests and local development. They are not shared between isolates.
+
+## Site sessions (`@ryusenkei/web/session`)
+
+After a sign-in is verified (an ID token checked by your server or by another API), `siteSessions` issues a cookie on your own domain and keeps the verified result (such as a member's rights) for a short time. When that cache is older than `refreshAfterMs`, the session reads as `stale`: verify again and pass the new result to `refresh`. It uses only Web APIs, so it runs on Workers and Vercel.
+
+```ts
+import { siteSessions } from '@ryusenkei/web/session';
+import { d1SessionStore } from '@ryusenkei/web/cloudflare';
+
+type Member = { memberId: string; rights: string[] };
+
+const sessions = siteSessions<Member>({ store: d1SessionStore(env.DB, { name: 'DB' }), secret: env.SESSION_SECRET });
+
+// after the sign-in is verified
+const { setCookie } = await sessions.issue(member.memberId, member, { replacing: request });
+return new Response(null, { status: 303, headers: { location: '/mypage', 'set-cookie': setCookie } });
+
+// on each request
+const read = await sessions.read(request);
+if (!read.ok) return signInPage(read.error === 'invalid_session' ? sessions.clearCookie() : undefined);
+let session = read.value;
+if (session.stale) {
+  const fresh = await verifyAgain(session.subject); // your member API
+  if (!fresh) return signInPage(await sessions.revoke(request));
+  const refreshed = await sessions.refresh(session, fresh);
+  if (!refreshed.ok) return signInPage(sessions.clearCookie());
+  session = refreshed.value;
+}
+```
+
+- The cookie holds a random session ID and its HMAC-SHA256 signature (`secret`; an array during a key rotation, new key first). A cookie with a wrong signature is refused without reading the store. The store keeps only the SHA-256 of the ID, so a leaked store can't produce cookies.
+- The cookie is `__Host-session` by default, always `HttpOnly`, `Secure`, `SameSite=Lax`, with `Max-Age` set to the lifetime. `cookie: { name, domain, path, sameSite, secure }` changes it. A `__Host-` name with `domain`, a path other than `/`, or `secure: false` throws `UsageError` (`invalid_cookie_options`) when created.
+- `maxAgeMs` is the lifetime (default 30 days, up to the browsers' 400 days). Refreshing doesn't extend it. `refreshAfterMs` is how long the verified result is trusted (default 10 minutes).
+- `read` returns `no_session` without a cookie and `invalid_session` for a wrong signature, an expired session, or a revoked one. Answer `invalid_session` with `clearCookie()`.
+- `issue(subject, data, { replacing })` deletes the session in the request's cookie first, so each sign-in gets a new ID.
+- `revoke(request)` signs out and returns the `Set-Cookie` that clears the cookie. `revokeSubject(subject)` deletes every session of a subject, for example on a webhook that a member was suspended or deleted.
+- `refresh` returns `invalid_session` when the session was revoked meanwhile, so a revoked session isn't brought back.
+- `purge()` deletes expired sessions; call it from a scheduled job.
+- `data` must survive `JSON.stringify`. A missing `secret` throws `ConfigError` (`key: 'secret'`) when the cookie is first signed or read.
+
+`SessionStore` is the port (`insert`, `get`, `update`, `delete`, `deleteBySubject`, `deleteExpired`). `d1SessionStore` in `@ryusenkei/web/cloudflare` implements it on D1, and `memorySessionStore()` in memory for tests and local development. On Vercel, implement the port on your database. `cookieValue(request, name)` reads one cookie from a request.
+
+## Invite codes (`@ryusenkei/web/invite`)
+
+One-time codes that expire, such as an invite link that ties a member to their LINE account. Only the hash of the code is stored; the code is returned once, when it is issued.
+
+```ts
+import { invites } from '@ryusenkei/web/invite';
+import { d1InviteStore } from '@ryusenkei/web/cloudflare';
+
+const invite = invites({ store: d1InviteStore(env.DB, { name: 'DB' }), ttlMs: 7 * 24 * 60 * 60 * 1000 });
+
+const { code, expiresAt } = await invite.issue(projectId, memberId);
+const url = `https://example.com/join?code=${code}`;
+
+// when the link is used
+const used = await invite.redeem(projectId, code);
+if (!used.ok) return joinError(used.error); // 'not_found' | 'expired' | 'used'
+await linkLineAccount(used.value.subject);
+```
+
+- `scope` (the first argument) is where a code is valid, such as a project ID or the purpose. A code redeemed under another scope is `not_found`.
+- `redeem` succeeds once; of several concurrent redeems, one wins. `check(scope, code)` answers the same without using the code, for a page that shows the invite before it is accepted.
+- Codes are 32 random bytes in base64url (43 characters, URL-safe; `bytes` from 16 to 128). There are no short codes to type in, because a short code stored as a plain hash can be recovered by trying every value.
+- `issue(scope, subject, { ttlMs })` changes the lifetime of one code (default `ttlMs` is 7 days). `revoke(scope, subject)` deletes a subject's unused codes, for example before issuing a new one. `purge()` deletes expired codes, used or not.
+
+`InviteStore` is the port (`insert`, `find`, `use`, `revoke`, `deleteExpired`). `d1InviteStore` implements it on D1, and `memoryInviteStore()` in memory.
+
+## Example: members who sign in with LINE
+
+A site whose members sign in on a LIFF page, with the member records kept by another service (a CMS with a member API that verifies LINE ID tokens). The site holds no member data; it keeps a session and passes ID tokens on.
+
+1. The LIFF page sends `liff.getIDToken()` to the site's server. The server passes the token to the member API, which verifies it (for example with `lineIdTokenVerifier`) and answers with the member and their rights.
+2. The server issues a session with `sessions.issue(memberId, member)`. When the session is `stale`, it asks the member API again by member ID and calls `refresh`; when the member is suspended, it calls `revoke`.
+3. A survey on the same page goes through `submissionHandler` with `jwtAuthenticator(lineIdTokenVerifier({ channelId }))`, and `httpDestination({ url, headers, credential: { field: 'idToken' } })` forwards the answers with the ID token, so the member API verifies the person itself. Wrap it in `afterDelivery` to send a LINE push only after the answer is stored.
+4. A member who joined another way gets an invite link from `invites`. Redeeming it on the LIFF page, together with an ID token, ties the LINE account to that member.
+
+```ts
+const handleSurvey = submissionHandler({
+  forms: { survey },
+  authenticator: jwtAuthenticator(lineIdTokenVerifier({ channelId: env.LINE_CHANNEL_ID })),
+  rateLimiter: cloudflareRateLimiter(env.FORM_LIMITER, { name: 'FORM_LIMITER' }),
+  destinations: [
+    afterDelivery(
+      httpDestination({ name: 'members', url: env.MEMBER_SURVEY_URL, headers: { authorization: `Bearer ${env.MEMBER_API_KEY}` }, credential: { field: 'idToken' } }),
+      async ({ submission }) => pushThanks(submission.subject!),
+    ),
+  ],
+});
+```
 
 ## Legal documents (`@ryusenkei/web/legal`)
 
@@ -637,16 +732,24 @@ const files = r2BlobStore(env.FILES, { name: 'FILES' });
 | `r2BlobStore` | a `BlobStore` from `@ryusenkei/web/blob` | R2 (`r2_buckets`). R2 needs the length of a stream, so read a body of unknown length into an `ArrayBuffer` first |
 | `d1SubmissionOnce(binding, { table? })` | a `SubmissionOnce` from `@ryusenkei/web/form/server` | D1 (`d1_databases`). An insert into a `(scope, subject)` primary key, so one of several concurrent claims wins |
 | `d1DailyQuota(binding, { timeZone, table? })` | a `DailyQuota` | D1. One upsert per `take`, so concurrent submissions can't pass the limit. One row per key and day; old days are kept |
+| `d1SessionStore(binding, { table? })` | a `SessionStore` from `@ryusenkei/web/session` | D1. Keyed by the hash of the session ID |
+| `d1InviteStore(binding, { table? })` | an `InviteStore` from `@ryusenkei/web/invite` | D1. Redeeming is one `UPDATE … RETURNING`, so one of several concurrent redeems wins |
 | `analyticsEngineRecorder(binding, schema)` | an `EventRecorder` | Analytics Engine (`analytics_engine_datasets`). Fields go to `blob1`… and `double1`… in schema order, `index` to `index1` (queried as `index1` when it is a field name) |
 | `analyticsEngineCounts(schema, { accountId, token, dataset })` | an `EventCounts` | None: the SQL API over HTTP, with an API token that can read Account Analytics |
 
 Each adapter takes `{ name }`, the binding's name in your wrangler config, which goes into the `key` of the `ConfigError` for a missing binding (default `binding`).
 
-The D1 adapters don't create their tables. Put the SQL from `submissionOnceTableSql()` and `dailyQuotaTableSql()` (table names `submission_once` and `daily_quota`, or the name you pass to both the function and `table`) into a D1 migration:
+The D1 adapters don't create their tables. Put the SQL from `submissionOnceTableSql()`, `dailyQuotaTableSql()`, `sessionTableSql()`, and `inviteTableSql()` (table names `submission_once`, `daily_quota`, `site_sessions`, and `invite_codes`, or the name you pass to both the function and `table`) into a D1 migration:
 
 ```sql
 CREATE TABLE IF NOT EXISTS submission_once (scope TEXT NOT NULL, subject TEXT NOT NULL, claimed_at INTEGER NOT NULL, PRIMARY KEY (scope, subject));
 CREATE TABLE IF NOT EXISTS daily_quota (key TEXT NOT NULL, day TEXT NOT NULL, count INTEGER NOT NULL, PRIMARY KEY (key, day));
+CREATE TABLE IF NOT EXISTS site_sessions (key TEXT PRIMARY KEY, subject TEXT NOT NULL, data TEXT NOT NULL, created_at INTEGER NOT NULL, refreshed_at INTEGER NOT NULL, expires_at INTEGER NOT NULL);
+CREATE INDEX IF NOT EXISTS site_sessions_subject ON site_sessions (subject);
+CREATE INDEX IF NOT EXISTS site_sessions_expires_at ON site_sessions (expires_at);
+CREATE TABLE IF NOT EXISTS invite_codes (key TEXT PRIMARY KEY, scope TEXT NOT NULL, subject TEXT NOT NULL, created_at INTEGER NOT NULL, expires_at INTEGER NOT NULL, used_at INTEGER);
+CREATE INDEX IF NOT EXISTS invite_codes_subject ON invite_codes (scope, subject);
+CREATE INDEX IF NOT EXISTS invite_codes_expires_at ON invite_codes (expires_at);
 ```
 
 ### Errors

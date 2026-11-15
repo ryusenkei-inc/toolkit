@@ -13,6 +13,7 @@ pnpm add @ryusenkei/core
 | `@ryusenkei/core` | `Result`, infrastructure errors and their classification, error reporting, logging, `traceparent` and the `Tracer` port |
 | `@ryusenkei/core/context` | `withLogContext`, which adds fields to every log line inside a call (AsyncLocalStorage) |
 | `@ryusenkei/core/trace` | Spans that follow the call (AsyncLocalStorage), and `tracedFetch` |
+| `@ryusenkei/core/csv` | Writing and reading CSV, with an option for files that open in Excel |
 
 ## Business failures: `Result` and `Problem`
 
@@ -138,6 +139,42 @@ From `@ryusenkei/core/trace` (AsyncLocalStorage, like `@ryusenkei/core/context`)
 - Outside any span, `withSpan` and `tracedFetch` just run. Under an unsampled trace, they create no child spans, but `traceparent` is still sent (with the sampled flag off) and logs still carry the IDs.
 - Attributes go to logs: keep out bodies, queries, and email addresses.
 - On Workers, durations count only time spent waiting on I/O, because the clock doesn't advance during CPU work.
+
+## CSV (`@ryusenkei/core/csv`)
+
+```ts
+import { encodeCsv, encodeCsvRow, parseCsv } from '@ryusenkei/core/csv';
+
+const csv = encodeCsv([['ID', '名前', '更新日時'], ...rows.map((r) => [r.id, r.name, r.updatedAt])], { excel: true });
+return new Response(csv, { headers: { 'content-type': 'text/csv; charset=utf-8', 'content-disposition': 'attachment; filename="members.csv"' } });
+
+const parsed = parseCsv(await file.text());
+if (!parsed.ok) return importError(parsed.error, parsed.line); // 'unterminated_quote' | 'invalid_quote'
+const [header, ...records] = parsed.value;
+```
+
+Writing (`encodeCsv(rows, options)`, or `encodeCsvRow(row, options)` per line for a stream):
+
+- The default is RFC 4180: `
+` after every row, and quotes only around values with the delimiter, a quote, or a line break (`"` becomes `""`).
+- Values are `string | number | boolean | null | undefined`. `null` and `undefined` are empty, booleans are `TRUE` and `FALSE`, and `NaN` and infinities are empty.
+- `delimiter` (default `,`; one character, not a quote or line break), `newline` (`
+` or `
+`), `quote` (`needed` or `always`), and `bom`.
+- `formulaGuard` puts `'` before strings that start with `=`, `+`, `-`, `@`, a tab, or a CR, so a spreadsheet doesn't run them as formulas. Numbers are left as they are.
+- `excel: true` turns on `bom`, `quote: 'always'`, and `formulaGuard`, so a UTF-8 file with Japanese text opens correctly in Excel. Options you pass yourself win.
+
+Reading (`parseCsv(text, { delimiter })`):
+
+- A leading BOM is removed. Rows may end in `
+`, `
+`, or ``, and the last one may have no line break.
+- Quoted values give back delimiters, line breaks, and `""`. A `"` inside an unquoted value is kept, as spreadsheets do.
+- An empty line is `['']`, and rows aren't padded to the same length; check the columns yourself.
+- An unclosed quote (`unterminated_quote`) or text after a closing quote (`invalid_quote`) fails with the line number (from 1, counting line breaks inside quotes).
+- It reads a string. Decode other encodings, such as Shift_JIS, with `TextDecoder` first.
+
+A wrong `delimiter` throws `UsageError` (`invalid_delimiter`).
 
 ## Conventions
 

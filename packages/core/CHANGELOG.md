@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.6.0
+
+### Added
+
+- `@ryusenkei/core/csv`: `encodeCsv`, `encodeCsvRow`, and `parseCsv`. RFC 4180 with a choice of delimiter, line break, and quoting, a BOM, a guard against spreadsheet formulas, and `excel: true` for files that open in Excel. Reading removes a BOM, accepts any line break, and reports the line of a broken quote.
+
 ## 0.5.0
 
 Arguments now follow one rule: required arguments are positional, optional settings go in a trailing options object, clocks are `now: () => number`, and `fetch` replacements are named `fetch`.

@@ -48,15 +48,15 @@ export function memoryDestination(name = 'memory'): Destination & { received: Su
   };
 }
 
-/** 主体を切り替えられる認証。`null` で認証に失敗させる */
-export function fakeAuthenticator(subject: string | null = 'user-1'): Authenticator<'unauthenticated'> & { calls: number; as(value: string | null): void } {
+/** 主体を切り替えられる認証。`null` で認証に失敗させる。`credential` は認証を通ったときに返すトークン */
+export function fakeAuthenticator(subject: string | null = 'user-1', options: Readonly<{ credential?: string }> = {}): Authenticator<'unauthenticated'> & { calls: number; as(value: string | null): void } {
   let current = subject;
   const self = {
     calls: 0,
     as: (value: string | null) => void (current = value),
     async authenticate() {
       self.calls += 1;
-      return current === null ? err('unauthenticated') : ok({ subject: current });
+      return current === null ? err('unauthenticated') : ok({ subject: current, ...(options.credential !== undefined && { credential: options.credential }) });
     },
   };
   return self;
