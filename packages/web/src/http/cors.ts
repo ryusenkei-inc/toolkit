@@ -20,8 +20,9 @@ const forbidden = () => new Response(JSON.stringify({ ok: false, error: 'forbidd
 
 /**
  * 処理に CORS を重ねる（`submissionHandler` など、Web 標準の Request → Response の関数）
- * - `OPTIONS`: 許可したオリジンには 204 と許可のヘッダー、ほかは 403 `forbidden_origin`（処理を呼ばない）
- * - ほかのメソッド: `Origin` が許可の外なら処理を呼ばずに 403 `forbidden_origin`。許可したオリジンなら応答に `access-control-allow-origin` を足す
+ * - `OPTIONS`: 許可したオリジンには204と許可のヘッダー、ほかは403の `forbidden_origin`（処理を呼ばない）
+ * - ほかのメソッド: `Origin` が許可の外なら、処理を呼ばずに403の `forbidden_origin`
+ * - 許可したオリジンなら、処理の応答に `access-control-allow-origin` を足す
  * - `Origin` のない要求（サーバーからの呼び出し）はそのまま処理へ渡す
  * - Cookie などの資格情報は許可しない（`access-control-allow-credentials` を付けない）
  */

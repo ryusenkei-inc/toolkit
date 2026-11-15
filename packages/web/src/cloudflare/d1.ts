@@ -85,7 +85,8 @@ export function d1SubmissionOnce(db: D1DatabaseBinding | undefined, options: D1S
 
 /**
  * D1 による日ごとの受付の上限（`@ryusenkei/web/form/server` の `DailyQuota`）
- * - 表は `dailyQuotaTableSql()` で作る。キーと日（`timeZone` での `YYYY-MM-DD`）ごとに1行で、1つの upsert で数えるので同時の送信でも上限を超えない
+ * - 表は `dailyQuotaTableSql()` で作る。キーと日（`timeZone` での `YYYY-MM-DD`）ごとに1行
+ * - 1つの upsert で数えるので、同時の送信でも上限を超えない
  * - 古い日の行は消さない（キーと日ごとに1行。要るなら使う側で消す）
  * - binding がなければ `ConfigError`、D1 の失敗は `TransientError`
  */
