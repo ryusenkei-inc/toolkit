@@ -25,6 +25,10 @@
     "./trace": {
       "types": "./dist/trace/index.d.ts",
       "default": "./dist/trace/index.js"
+    },
+    "./csv": {
+      "types": "./dist/csv/index.d.ts",
+      "default": "./dist/csv/index.js"
     }
   },
   "files": [

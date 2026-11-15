@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.12.0
+
+Parts for sites whose members sign in with an ID token kept by another service: passing the token on, site sessions, and invite codes. Existing code works unchanged.
+
+### Added
+
+- `@ryusenkei/web/session`: `siteSessions({ store, secret, cookie?, maxAgeMs?, refreshAfterMs?, now? })` issues a signed cookie after a sign-in is verified and caches the verified result. `issue`, `read` (`no_session`, `invalid_session`), `refresh` (when the session is `stale`), `revoke`, `revokeSubject`, `clearCookie`, `purge`. The `SessionStore` port, `memorySessionStore()`, and `cookieValue(request, name)`.
+- `@ryusenkei/web/invite`: `invites({ store, ttlMs?, bytes?, now? })` issues one-time codes that expire, stored as hashes. `issue`, `check`, `redeem` (`not_found`, `expired`, `used`), `revoke`, `purge`. The `InviteStore` port and `memoryInviteStore()`.
+- `d1SessionStore`, `d1InviteStore`, `sessionTableSql`, and `inviteTableSql` in `@ryusenkei/web/cloudflare`.
+- `Authenticated` (`{ subject, credential? }`): an `Authenticator` can return the token it verified, and `submissionHandler` passes it to destinations as `Submission.credential`. `jwtAuthenticator` returns the JWT.
+- `httpDestination({ credential: { field } | { header } })` forwards that token in the JSON body or a header, so the receiving API can verify it itself.
+- `afterDelivery(destination, then)`: runs `then` only after the destination succeeds (a LINE push after the answer is stored). A failure in `then` is logged and doesn't change the result.
+- `fakeAuthenticator(subject, { credential })` in `@ryusenkei/web/form/testing`.
+
+### Changed
+
+- `webhookDestination` leaves `credential` out of its JSON body. Logs never carry it.
+
 ## 0.11.0
 
 The legal documents can speak as the site instead of the company, take a contact form, and include the articles a media site needs. Declarations without the new options give the same output as before.

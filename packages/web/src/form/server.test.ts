@@ -3,7 +3,7 @@ import { memoryMailer } from '../mail/testing.ts';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { submitForm } from './client.ts';
 import { defineForm } from './index.ts';
-import { httpDestination, jwtAuthenticator, mailDestination, notificationText, submissionHandler, webhookDestination, type Destination, type Submission, type SubmissionOnce } from './server.ts';
+import { afterDelivery, httpDestination, jwtAuthenticator, mailDestination, notificationText, submissionHandler, webhookDestination, type Destination, type Submission, type SubmissionOnce } from './server.ts';
 import { fakeAuthenticator, fakeBotCheck, fakeRateLimiter, memoryDailyQuota, memoryDestination, memorySubmissionOnce } from './testing.ts';
 import { verifyWebhook } from '../webhook/index.ts';
 
@@ -207,6 +207,71 @@ describe('httpDestination', () => {
     expect(await httpDestination({ url: 'https://cms.example.com/', fetch: fetcher }).deliver(submission, { requestId: 'r' })).toEqual({ ok: false, error: 'status_400' });
     await expect(httpDestination({ url: undefined }).deliver(submission, { requestId: 'r' })).rejects.toBeInstanceOf(ConfigError);
   });
+
+  it('credential で認証のトークンを本文の項目かヘッダーに入れて渡す', async () => {
+    const calls: RequestInit[] = [];
+    const fetcher = (async (_url: string, init: RequestInit) => {
+      calls.push(init);
+      return Response.json({ id: '1' });
+    }) as unknown as typeof fetch;
+    const signed: Submission = { ...submission, subject: 'U1', credential: 'id-token' };
+    await httpDestination({ url: 'https://cms.example.com/', credential: { field: 'idToken' }, fetch: fetcher }).deliver(signed, { requestId: 'r' });
+    expect(JSON.parse(String(calls[0]!.body))).toEqual({ ...submission.values, idToken: 'id-token' });
+    await httpDestination({ url: 'https://cms.example.com/', credential: { field: 'id_token' }, body: (s) => ({ answers: s.values }), fetch: fetcher }).deliver(signed, { requestId: 'r' });
+    expect(JSON.parse(String(calls[1]!.body))).toEqual({ answers: submission.values, id_token: 'id-token' });
+    await httpDestination({ url: 'https://cms.example.com/', headers: { 'x-api-key': 'k' }, credential: { header: 'Authorization' }, fetch: fetcher }).deliver(signed, { requestId: 'r' });
+    expect(calls[2]!.headers).toMatchObject({ 'x-api-key': 'k', Authorization: 'Bearer id-token' });
+    expect(JSON.parse(String(calls[2]!.body))).toEqual(submission.values);
+    await httpDestination({ url: 'https://cms.example.com/', credential: { header: 'x-id-token' }, fetch: fetcher }).deliver(signed, { requestId: 'r' });
+    expect(calls[3]!.headers).toMatchObject({ 'x-id-token': 'id-token' });
+  });
+
+  it('credential があるのにトークンがなければ ConfigError、本文がオブジェクトでなければ UsageError', async () => {
+    const fetcher = vi.fn(async () => Response.json({})) as unknown as typeof fetch;
+    await expect(httpDestination({ url: 'https://cms.example.com/', credential: { field: 'idToken' }, fetch: fetcher }).deliver(submission, { requestId: 'r' })).rejects.toMatchObject({ name: 'ConfigError', key: 'credential' });
+    await expect(httpDestination({ url: 'https://cms.example.com/', credential: { field: 'idToken' }, body: () => ['a'], fetch: fetcher }).deliver({ ...submission, credential: 't' }, { requestId: 'r' })).rejects.toMatchObject({ name: 'UsageError', code: 'credential_field_needs_object' });
+    expect(fetcher).not.toHaveBeenCalled();
+  });
+
+  it('submissionHandler の主体の認証のトークンを転送先へ渡し、webhook の本文には入れない', async () => {
+    quiet();
+    const bodies: Record<string, string> = {};
+    const fetcher = (async (url: string, init: RequestInit) => {
+      bodies[url] = String(init.body);
+      return Response.json({ id: 'a1' });
+    }) as unknown as typeof fetch;
+    const handle = submissionHandler({
+      forms: { feedback },
+      destinations: [httpDestination({ url: 'https://cms.example.com/in', credential: { field: 'idToken' }, fetch: fetcher }), webhookDestination({ url: 'https://hooks.example.com/in', fetch: fetcher })],
+      authenticator: fakeAuthenticator('U1', { credential: 'id-token' }),
+    });
+    expect((await handle(post({ message: 'こんにちは' }))).status).toBe(200);
+    expect(JSON.parse(bodies['https://cms.example.com/in']!)).toEqual({ message: 'こんにちは', idToken: 'id-token' });
+    expect(JSON.parse(bodies['https://hooks.example.com/in']!)).toMatchObject({ subject: 'U1' });
+    expect(bodies['https://hooks.example.com/in']).not.toContain('id-token');
+  });
+});
+
+describe('afterDelivery', () => {
+  it('届け先の成功の後にだけ続きを呼び、値と相関の ID を渡す', async () => {
+    const d = memoryDestination('cms');
+    const seen: unknown[] = [];
+    const chained = afterDelivery(d, async ({ submission: s, value, requestId }) => void seen.push([s.form, value, requestId]));
+    expect(chained.name).toBe('cms');
+    expect(await chained.deliver(submission, { requestId: 'r1' })).toEqual({ ok: true, value: undefined });
+    expect(seen).toEqual([['inquiry', undefined, 'r1']]);
+    d.fail('value');
+    expect(await chained.deliver(submission, { requestId: 'r2' })).toEqual({ ok: false, error: 'rejected' });
+    expect(seen).toHaveLength(1);
+  });
+
+  it('続きの失敗は届け先の結果を変えない', async () => {
+    quiet();
+    const chained = afterDelivery(memoryDestination(), async () => {
+      throw new Error('push down');
+    });
+    expect((await chained.deliver(submission, { requestId: 'r' })).ok).toBe(true);
+  });
 });
 
 describe('届け先の名前と回数の制限のキー', () => {
@@ -375,7 +440,7 @@ describe('jwtAuthenticator', () => {
 
   it('本文の idToken を検証し、sub を主体にする', async () => {
     const v = verifier();
-    expect(await jwtAuthenticator(v).authenticate(input({ idToken: 'good' }))).toEqual({ ok: true, value: { subject: 'U1' } });
+    expect(await jwtAuthenticator(v).authenticate(input({ idToken: 'good' }))).toEqual({ ok: true, value: { subject: 'U1', credential: 'good' } });
     expect(await jwtAuthenticator(v).authenticate(input({ idToken: 'bad' }))).toEqual({ ok: false, error: 'unauthenticated' });
     expect(await jwtAuthenticator(v).authenticate(input({}))).toEqual({ ok: false, error: 'unauthenticated' });
     expect(v.tokens).toEqual(['good', 'bad', undefined]);
@@ -385,7 +450,7 @@ describe('jwtAuthenticator', () => {
     const v = verifier();
     expect(await jwtAuthenticator(v, { header: 'authorization', field: null }).authenticate(input({ idToken: 'good' }, { authorization: 'Bearer good' }))).toMatchObject({ ok: true });
     expect(await jwtAuthenticator(v, { header: 'authorization', field: null }).authenticate(input({ idToken: 'good' }))).toMatchObject({ ok: false });
-    expect(await jwtAuthenticator(v, { field: 'token', subject: (c) => `line:${String(c.sub)}` }).authenticate(input({ token: 'good' }))).toEqual({ ok: true, value: { subject: 'line:U1' } });
+    expect(await jwtAuthenticator(v, { field: 'token', subject: (c) => `line:${String(c.sub)}` }).authenticate(input({ token: 'good' }))).toEqual({ ok: true, value: { subject: 'line:U1', credential: 'good' } });
   });
 
   it('主体が取れなければ unauthenticated', async () => {

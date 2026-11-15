@@ -13,6 +13,7 @@ export default defineConfig({
       { find: /^@ryusenkei\/core$/, replacement: core('index.ts') },
       { find: /^@ryusenkei\/core\/context$/, replacement: core('context/index.ts') },
       { find: /^@ryusenkei\/core\/trace$/, replacement: core('trace/index.ts') },
+      { find: /^@ryusenkei\/core\/csv$/, replacement: core('csv/index.ts') },
     ],
     // `.claude/`: リポの中の作業用の worktree、`.terraform/`: Terraform の作業のディレクトリ
     exclude: [...configDefaults.exclude, '.claude/**', '**/.terraform/**'],
