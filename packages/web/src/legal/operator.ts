@@ -1,4 +1,4 @@
-import type { Paragraph, Row } from './document.ts';
+import type { Inline, Paragraph, Row } from './document.ts';
 
 /**
  * 運営者の項目の公開の仕方
@@ -23,6 +23,23 @@ export type Operator = Readonly<{
   email: string;
 }>;
 
+/**
+ * 窓口（お問い合わせの受け付け先）
+ * - `email`: メールアドレス
+ * - `url`: お問い合わせのフォームの URL。`text` はリンクの文言（既定は「お問い合わせのフォーム」）
+ */
+export type Contact = Readonly<{ email: string }> | Readonly<{ url: string; text?: string }>;
+
+/** 窓口のリンク。窓口がなければ運営者のメールアドレス */
+export const contactInline = (operator: Operator, contact: Contact | undefined): Exclude<Inline, string> =>
+  !contact ? { email: operator.email } : 'email' in contact ? { email: contact.email } : { url: contact.url, text: contact.text ?? 'お問い合わせのフォーム' };
+
+/** 「〇〇（窓口）までご連絡ください」の段落の部品。フォームは「から」、メールは「まで」 */
+export const contactSentence = (lead: string, operator: Operator, contact: Contact | undefined): Paragraph => {
+  const link = contactInline(operator, contact);
+  return [lead, link, 'url' in link ? 'からご連絡ください。' : 'までご連絡ください。'];
+};
+
 /** 請求開示の項目の表示。11条ただし書の省略の条件（請求により書面か電子メールで遅滞なく提供する旨）に合わせる */
 export const ON_REQUEST_TEXT = 'ご請求があれば、電子メールで遅滞なく提供します';
 
@@ -33,15 +50,16 @@ const show = (d: Disclosure): string => (d.disclosure === 'public' ? d.value : O
 /**
  * 運営者の表の行（プライバシーポリシーの窓口、会社の情報の欄）
  * - 未定の項目は行を出さない
+ * - `contact`: 窓口の行に出す受け付け先（既定は運営者のメールアドレス）
  */
-export function operatorRows(operator: Operator): Row[] {
+export function operatorRows(operator: Operator, options: Readonly<{ contact?: Contact }> = {}): Row[] {
   const rows: Row[] = [{ label: '運営', value: operator.url ? [{ url: operator.url, text: operator.name }] : operator.name }];
   if (operator.legalName) rows.push({ label: '名称', value: show(operator.legalName) });
   else if (operator.status === 'preparing') rows.push({ label: '名称', value: '設立準備中' });
   if (operator.address) rows.push({ label: '所在地', value: show(operator.address) });
   if (operator.representative) rows.push({ label: '代表者', value: show(operator.representative) });
   if (operator.phone) rows.push({ label: '電話番号', value: show(operator.phone) });
-  rows.push({ label: '窓口', value: [{ email: operator.email }] satisfies Paragraph });
+  rows.push({ label: '窓口', value: [contactInline(operator, options.contact)] satisfies Paragraph });
   return rows;
 }
 

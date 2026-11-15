@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.11.0
+
+The legal documents can speak as the site instead of the company, take a contact form, and include the articles a media site needs. Declarations without the new options give the same output as before.
+
+### Added
+
+- `speaker` on `PrivacyDeclaration` and `AdDisclosureDeclaration`: the word the text speaks as (default `当社`). With it, the preamble defines the operator under that word; with `speaker: '当サイト'`, the site is called `本サイト` unless `subjectShort` is given.
+- `contact` on both declarations (`Contact`: `{ email }` or `{ url, text? }`), used in the contact article and the `窓口` row. `operatorRows(operator, { contact })`.
+- `accessLog` on `PrivacyDeclaration` (`AccessLog`): a `閲覧の記録` article after the retention article.
+- On `AdDisclosureDeclaration`: `adTypes` (`AdType`, a `広告の種類と表示` table), `independence`, `copyright`, `links`, `disclaimer`, and `contentName`. They appear with or without programs.
+- `after_title` in `AdLabeling['position']` (`タイトルの直後`).
+
 ## 0.10.0
 
 Forms can take multiple-choice answers, sign the submitter in, accept one submission per person, and cap submissions per day. A handler can be called from pages on other origins.

@@ -1,5 +1,5 @@
-export { adDisclosure, adStatements, amazonAssociates, type AdDisclosureDeclaration, type AdLabeling, type AdProgram } from './ads.ts';
+export { adDisclosure, adStatements, amazonAssociates, type AdDisclosureDeclaration, type AdLabeling, type AdProgram, type AdType } from './ads.ts';
 export { LegalDeclarationError, type Article, type Inline, type LegalDocument, type Paragraph, type Revision, type Row } from './document.ts';
-export { copyrightLine, ON_REQUEST_TEXT, operatorRows, type Disclosure, type Operator } from './operator.ts';
-export { privacyPolicy, retentionDaysOf, retentionText, type CollectedItem, type ExternalService, type PrivacyDeclaration, type Retention } from './privacy.ts';
+export { copyrightLine, ON_REQUEST_TEXT, operatorRows, type Contact, type Disclosure, type Operator } from './operator.ts';
+export { privacyPolicy, retentionDaysOf, retentionText, type AccessLog, type CollectedItem, type ExternalService, type PrivacyDeclaration, type Retention } from './privacy.ts';
 export { tokushoNotice, type TokushoDeclaration, type TokushoNotice } from './tokusho.ts';

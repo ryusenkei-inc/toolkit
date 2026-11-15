@@ -292,7 +292,20 @@ const operator: Operator = {
 
 - `name` is the display name (the operator row and the copyright line); `legalName` is the registered trade name. While a company is being set up (`status: 'preparing'`), leave `legalName` out and the name row reads `設立準備中`.
 - Each detail is either `public` with a value, or `on_request` without one; the latter is shown as `ご請求があれば、電子メールで遅滞なく提供します` (disclosed on request). Because an `on_request` detail carries no value, the declaration can live in a public repository without a personal name.
-- `operatorRows(operator)` gives the table rows. `copyrightLine(operator, year)` gives the footer line.
+- `operatorRows(operator, { contact })` gives the table rows; `contact` changes the `窓口` row (see [Speaker and contact](#speaker-and-contact)). `copyrightLine(operator, year)` gives the footer line.
+
+### Speaker and contact
+
+The privacy policy and the advertising disclosure take the same two options.
+
+- `speaker` is the word the text speaks as. Without it, the text says `当社` (the company), and the output is unchanged from earlier versions. With `speaker: '当サイト'`, the preamble defines the operator under that word, and the site itself becomes `本サイト`: `<subject>（以下「本サイト」といいます。）の運営者（以下「当サイト」といいます。）は、…`. Pass `subjectShort` to name the site differently; `speaker` and `subjectShort` can't be the same word.
+- `contact` is where questions go: `{ email }`, or `{ url, text? }` for a contact form (`text` defaults to `お問い合わせのフォーム`). It is used in the contact article and the `窓口` row. Without it, the operator's `email` is used.
+
+`当社` means a company. When the operator is not a company yet (`status: 'preparing'`), or the site is run under a site name, set `speaker` (`当サイト`, or `運営者`) so the text does not call the operator a company. The operator row still reads `設立準備中` until `legalName` is set.
+
+```ts
+privacyPolicy({ subject: 'Example', speaker: '当サイト', contact: { url: '/contact' }, operator, ... });
+```
 
 ### Privacy policy
 
@@ -323,6 +336,7 @@ What the declaration drives:
 | `services` with `role: 'transmission'` | What is sent, to whom, and why (external transmission from the user's device) |
 | any service outside 日本 | An article on provision to third parties in foreign countries, and a security-measure line about understanding those countries' rules |
 | `cookies` | The purposes and services that use cookies, or a statement that no cookies or external analytics are used |
+| `accessLog` | An article on the site's own access log (`閲覧の記録`): what is recorded (`items`), why (`purposes`), what is not recorded (`excludes`, for example `IP アドレス` and `Cookie`), that it is not used to identify anyone, and with `keepsAggregates: true`, that aggregate statistics are kept without a time limit. List the log in `collected` too, for its retention |
 | `revisions` | `revisedOn` (the latest) and the history |
 
 The standard articles (disclosure, correction and suspension, security measures, contact with the operator table, changes) are always included.
@@ -376,6 +390,40 @@ const footer = adStatements(declaration); // statements required by program term
 - `statement` is printed as is. `amazonAssociates(who)` fills in the wording the Amazon Associates terms require (`Amazonのアソシエイトとして、<who>は適格販売により収入を得ています。`).
 - With no programs, the page says the site carries no ads and lists only the contact.
 - With `enactedOn: null`, a missing `labeling` is listed in `doc.missing`; setting `enactedOn` with programs but no `labeling` throws `LegalDeclarationError`.
+
+#### Articles for media sites
+
+A site that publishes articles can add these articles. Each appears only when declared, and they appear with or without programs:
+
+```ts
+adDisclosure({
+  subject: 'Example',
+  speaker: '当サイト',
+  operator,
+  contact: { url: '/contact' },
+  programs: [], // no program yet
+  adTypes: [
+    { kind: 'affiliate', label: '広告', position: 'after_title' },
+    { kind: 'provided', label: '広告', position: 'after_title', namesSource: true },
+    { kind: 'sponsored', label: '広告', position: 'after_title', namesSource: true },
+  ],
+  independence: { decidedBy: '編集部とライター' },
+  copyright: { holder: '記事を執筆したライター（編集部の記事は運営者）' },
+  links: { inbound: 'free' },
+  disclaimer: { corrections: '記事の末尾の訂正の履歴' },
+  enactedOn: '2026-11-16',
+});
+```
+
+| Declared | Generated |
+| --- | --- |
+| `adTypes` | `広告の種類と表示`: a table of the kinds of ads the site may carry (`affiliate`, `advertising`, `sponsored`, `provided` for products given free of charge), each with its label and position (`after_title` is right after the title), and with `namesSource: true`, that the advertiser or provider is named. The page no longer says the site carries no ads; with no programs, it says the site takes part in none for now. `labeling` is not needed |
+| `independence` | `編集の独立`: articles are planned and written by `decidedBy` (default: the speaker), advertisers have no say, and rewards don't change reviews. It replaces the selection paragraph of `紹介する内容` |
+| `copyright` | `著作権と引用`: who holds the copyright (`holder`, default: the speaker), no reproduction beyond what the law allows, and how to cite |
+| `links` | `リンク`: linking to the site is free (`inbound: 'free'`) or asks for contact first (`'ask'`), and no responsibility for linked sites |
+| `disclaimer` | `免責`: information is as of publication, where corrections are announced (`corrections`), and liability for damage is limited except for intent or gross negligence. The linked-site sentence moves here when `links` is not declared |
+
+`contentName` (default `記事`) is the word for what the site publishes. Change the page title by spreading the result (`{ ...doc, title: '広告の方針・免責' }`).
 
 Terms of use are not generated; they differ too much between products.
 

@@ -1,7 +1,8 @@
 // プライバシーポリシーを宣言から組み立てる（日本語、敬体、前文と第 N 条の形）
 // 定型の文面は公開の前に人が確認する（文面の正しさは、このパッケージでは保証しない）
 import { LegalDeclarationError, type Article, type LegalDocument, type Paragraph, type Revision } from './document.ts';
-import { operatorRows, type Operator } from './operator.ts';
+import { contactSentence, operatorRows, type Contact, type Operator } from './operator.ts';
+import { voiceOf } from './voice.ts';
 
 /**
  * 保管期間。日数は削除の処理からも `retentionDaysOf` で参照する
@@ -38,12 +39,32 @@ export type ExternalService = Readonly<{
   items: readonly string[];
 }>;
 
+/**
+ * 閲覧の記録（サイトのサーバーやアクセス解析で、閲覧したページなどを記録する）
+ * - 保管期間は `collected` に同じ名前の項目で書く
+ */
+export type AccessLog = Readonly<{
+  /** 記録する情報（例: 「閲覧したページ」「日付」） */
+  items: readonly string[];
+  purposes: readonly string[];
+  /** 記録しない情報（例: 「IP アドレス」「Cookie」） */
+  excludes?: readonly string[];
+  /** 個人を特定できない集計（日ごとの閲覧数など）を、期間を定めずに保管する */
+  keepsAggregates?: boolean;
+}>;
+
 export type PrivacyDeclaration = Readonly<{
   /** 対象（例: 「〇〇のウェブサイト」） */
   subject: string;
-  /** 対象の呼び方（既定は「当サイト」） */
+  /** 対象の呼び方（既定は「当サイト」。`speaker` が「当サイト」なら「本サイト」） */
   subjectShort?: string;
+  /** 本文の主語（例: 「当サイト」）。指定すると前文で運営者をこの名前で定義する。既定は「当社」 */
+  speaker?: string;
   operator: Operator;
+  /** お問い合わせの受け付け先（既定は運営者のメールアドレス） */
+  contact?: Contact;
+  /** 閲覧の記録の条。なければ出さない */
+  accessLog?: AccessLog;
   /** 制定日（YYYY-MM-DD）。`null` は下書きで、未定の項目を `missing` に出す */
   enactedOn: string | null;
   /** 改定の履歴（新しい順） */
@@ -89,7 +110,7 @@ export function privacyPolicy(d: PrivacyDeclaration): LegalDocument {
   const missing = missingOf(d);
   if (d.enactedOn && missing.length) throw new LegalDeclarationError('制定したプライバシーポリシーに未定の項目がある', missing);
 
-  const site = d.subjectShort ?? '当サイト';
+  const { site, op, actor, intro } = voiceOf(d);
   const services = d.services ?? [];
   const processors = services.filter((s) => s.role === 'processor');
   const transmissions = services.filter((s) => s.role === 'transmission');
@@ -101,30 +122,31 @@ export function privacyPolicy(d: PrivacyDeclaration): LegalDocument {
   const articles: Article[] = [
     {
       title: '取得する情報と利用目的',
-      paragraphs: [`当社は、${site}で以下の情報を取得し、それぞれの目的で利用します。`],
+      paragraphs: [`${op}は、${site}で以下の情報を取得し、それぞれの目的で利用します。`],
       bullets: d.collected.map((c) => `${c.name}（${c.method}）: ${c.purposes.join('、')}`),
-      after: ['当社は、利用者の同意を得ることなく、上記の目的の範囲を超えて個人情報等を利用しません。'],
+      after: [`${op}は、利用者の同意を得ることなく、上記の目的の範囲を超えて個人情報等を利用しません。`],
     },
     {
       title: '保管期間',
-      paragraphs: ['当社は、取得した情報を以下の期間保管し、期間を過ぎた情報は遅滞なく消去します。'],
+      paragraphs: [`${op}は、取得した情報を以下の期間保管し、期間を過ぎた情報は遅滞なく消去します。`],
       bullets: d.collected.map((c) => `${c.name}: ${c.retention ? retentionText(c.retention) : '（未定）'}`),
     },
+    ...(d.accessLog ? [accessLogArticle(d.accessLog, op, actor)] : []),
     cookieUses.length || transmissions.length
       ? {
           title: 'Cookie と外部への情報の送信',
           paragraphs: [
-            ...(cookieUses.length ? [`${site}は、以下の目的で Cookie を使用します。利用者は、ブラウザーの設定で Cookie を無効にできます。`] : [`${site}は、Cookie を使用していません。`]),
+            ...(cookieUses.length ? [`${actor}は、以下の目的で Cookie を使用します。利用者は、ブラウザーの設定で Cookie を無効にできます。`] : [`${actor}は、Cookie を使用していません。`]),
           ],
           ...(cookieUses.length && { bullets: cookieUses.map(([use, names]) => `${use}: ${names.join('、')}`) }),
           ...(transmissions.length && {
-            after: [`${site}は、以下のサービスのために、利用者の端末から外部へ情報を送信します。`, ...transmissions.map((s) => `${s.name}（送信先: ${at(s)}）: ${s.items.join('、')}を、${s.purpose}のために送信します。`)],
+            after: [`${actor}は、以下のサービスのために、利用者の端末から外部へ情報を送信します。`, ...transmissions.map((s) => `${s.name}（送信先: ${at(s)}）: ${s.items.join('、')}を、${s.purpose}のために送信します。`)],
           }),
         }
-      : { title: 'Cookie と外部への情報の送信', paragraphs: [`${site}は、Cookie を使用していません。また、アクセスの解析や広告のために、外部のサービスへ利用者の情報を送信していません。`] },
+      : { title: 'Cookie と外部への情報の送信', paragraphs: [`${actor}は、Cookie を使用していません。また、アクセスの解析や広告のために、外部のサービスへ利用者の情報を送信していません。`] },
     {
       title: '個人情報等の第三者提供',
-      paragraphs: ['当社は、以下の場合を除き、あらかじめ利用者の同意を得ることなく、個人情報等を第三者に提供しません。'],
+      paragraphs: [`${op}は、以下の場合を除き、あらかじめ利用者の同意を得ることなく、個人情報等を第三者に提供しません。`],
       items: [
         '利用目的の達成に必要な範囲で、個人情報等の取扱いの全部または一部を委託する場合',
         '合併その他の事由による事業の承継に伴って個人情報等が提供される場合',
@@ -133,32 +155,32 @@ export function privacyPolicy(d: PrivacyDeclaration): LegalDocument {
       ],
     },
     ...(processors.length
-      ? [{ title: '取扱いの委託', paragraphs: ['当社は、利用目的の達成に必要な範囲で、以下の事業者に個人情報等の取扱いを委託し、委託先を適切に監督します。'], bullets: processors.map((s) => `${at(s)}: ${s.purpose}（${s.items.join('、')}）`) }]
+      ? [{ title: '取扱いの委託', paragraphs: [`${op}は、利用目的の達成に必要な範囲で、以下の事業者に個人情報等の取扱いを委託し、委託先を適切に監督します。`], bullets: processors.map((s) => `${at(s)}: ${s.purpose}（${s.items.join('、')}）`) }]
       : []),
     ...(foreign.length
       ? [
           {
             title: '外国にある第三者への提供',
             paragraphs: [
-              `当社は、${[...new Set(foreign.map((s) => `${s.country}の ${s.provider}`))].join('、')} に個人情報等の取扱いを委託し、または個人情報等を提供します。この場合、法令に従い、当該国の個人情報の保護に関する制度を把握した上で、必要な措置を講じます。講じている措置の内容は、ご請求があれば遅滞なくお知らせします。`,
+              `${op}は、${[...new Set(foreign.map((s) => `${s.country}の ${s.provider}`))].join('、')} に個人情報等の取扱いを委託し、または個人情報等を提供します。この場合、法令に従い、当該国の個人情報の保護に関する制度を把握した上で、必要な措置を講じます。講じている措置の内容は、ご請求があれば遅滞なくお知らせします。`,
             ],
           },
         ]
       : []),
     {
       title: '個人情報等の開示',
-      paragraphs: ['当社は、利用者から個人情報の保護に関する法律の定めに基づき個人情報等の開示を求められたときは、利用者ご本人からのご請求であることを確認の上で、遅滞なく開示します（開示すべき個人情報等が存在しないときは、その旨を通知します）。ただし、法令により開示の義務を負わない場合は、この限りではありません。'],
+      paragraphs: [`${op}は、利用者から個人情報の保護に関する法律の定めに基づき個人情報等の開示を求められたときは、利用者ご本人からのご請求であることを確認の上で、遅滞なく開示します（開示すべき個人情報等が存在しないときは、その旨を通知します）。ただし、法令により開示の義務を負わない場合は、この限りではありません。`],
     },
     {
       title: '個人情報等の訂正及び利用停止等',
       paragraphs: [
-        '当社は、利用者から、個人情報等が真実でないという理由によって訂正を求められた場合、または利用目的の範囲を超えて取り扱われているという理由もしくは不正の手段により取得されたという理由によって利用の停止もしくは消去を求められた場合には、利用者ご本人からのご請求であることを確認の上で遅滞なく必要な調査を行い、その結果に基づき、訂正、利用の停止または消去を行い、その旨を利用者に通知します。',
-        '前項の規定は、法令により当社が訂正、利用の停止または消去の義務を負わない場合は、適用しません。',
+        `${op}は、利用者から、個人情報等が真実でないという理由によって訂正を求められた場合、または利用目的の範囲を超えて取り扱われているという理由もしくは不正の手段により取得されたという理由によって利用の停止もしくは消去を求められた場合には、利用者ご本人からのご請求であることを確認の上で遅滞なく必要な調査を行い、その結果に基づき、訂正、利用の停止または消去を行い、その旨を利用者に通知します。`,
+        `前項の規定は、法令により${op}が訂正、利用の停止または消去の義務を負わない場合は、適用しません。`,
       ],
     },
     {
       title: '安全管理措置の実施',
-      paragraphs: ['当社は、個人情報等の漏えい、滅失または毀損の防止のため、以下の措置を講じます。'],
+      paragraphs: [`${op}は、個人情報等の漏えい、滅失または毀損の防止のため、以下の措置を講じます。`],
       bullets: [
         '個人情報等の取扱いの責任者の設置と、取扱いの状況の定期的な点検',
         '個人情報等を取り扱う者への秘密の保持の義務づけ',
@@ -170,23 +192,36 @@ export function privacyPolicy(d: PrivacyDeclaration): LegalDocument {
     },
     {
       title: 'お問い合わせ先',
-      paragraphs: [['本ポリシーに関するご意見、ご質問、個人情報等の取扱いに関するお問い合わせは、', { email: d.operator.email }, 'までご連絡ください。']] satisfies Paragraph[],
-      table: operatorRows(d.operator),
+      paragraphs: [contactSentence('本ポリシーに関するご意見、ご質問、個人情報等の取扱いに関するお問い合わせは、', d.operator, d.contact)] satisfies Paragraph[],
+      table: operatorRows(d.operator, { contact: d.contact }),
     },
     {
       title: 'プライバシーポリシーの変更手続',
-      paragraphs: [`当社は、本ポリシーの内容を適宜見直し、その改善に努めます。本ポリシーは、法令に別段の定めがある場合を除き、変更することができます。変更後の本ポリシーは、${site}に掲載した時から効力を生じます。`],
+      paragraphs: [`${op}は、本ポリシーの内容を適宜見直し、その改善に努めます。本ポリシーは、法令に別段の定めがある場合を除き、変更することができます。変更後の本ポリシーは、${site}に掲載した時から効力を生じます。`],
     },
   ];
 
   const revisions = d.revisions ?? [];
   return {
     title: 'プライバシーポリシー',
-    intro: [`当社は、${d.subject}（以下「${site}」といいます。）の運営にあたり取得した利用者の個人情報等の取扱いについて、以下のとおりプライバシーポリシー（以下「本ポリシー」といいます。）を定めます。`],
+    intro: [intro(`の運営にあたり取得した利用者の個人情報等の取扱いについて、以下のとおりプライバシーポリシー（以下「本ポリシー」といいます。）を定めます。`)],
     articles,
     enactedOn: d.enactedOn,
     revisedOn: revisions[0]?.date,
     revisions,
     missing,
+  };
+}
+
+/** 閲覧の記録の条 */
+function accessLogArticle(log: AccessLog, op: string, actor: string): Article {
+  return {
+    title: '閲覧の記録',
+    paragraphs: [
+      `${actor}は、閲覧の記録として、${log.items.join('、')}を取得し、${log.purposes.join('、')}のために利用します。`,
+      ...(log.excludes?.length ? [`閲覧の記録に含めない情報: ${log.excludes.join('、')}`] : []),
+      `${op}は、閲覧の記録を、個人を特定する目的で利用しません。`,
+      ...(log.keepsAggregates ? ['閲覧の記録を集計した、個人を特定できない統計（日ごとの閲覧数など）は、期間を定めずに保管することがあります。'] : []),
+    ],
   };
 }
