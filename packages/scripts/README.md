@@ -33,14 +33,26 @@ await envCli({
 
 ```sh
 node scripts/env.ts run [NAME=value ...] <command> [...args]
-node scripts/env.ts push [--dry-run] [--only <target prefix>]
+node scripts/env.ts push [--dry-run] [--only <NAME | target prefix>]...
+node scripts/env.ts check [--only <NAME | target prefix>]...
 node scripts/env.ts tf -chdir=infra/stacks/site init   # Terraform, with `terraform` set
 ```
 
 | Subcommand | What it does |
 | --- | --- |
 | `run` | Loads `.env` into the environment and runs the command. Leading `NAME=value` arguments are set as extra variables, since Windows `cmd` can't parse `NAME=value cmd` |
-| `push` | Sends each value to its targets. Values go through stdin, never through process arguments. Keys missing from `targets` and empty values are skipped with a warning. `--only github:` limits the run to targets with that prefix |
+| `push` | Sends each value to its targets. Values go through stdin, never through process arguments. Keys missing from `targets` and empty values are skipped with a warning. Without `--only`, every key in `targets` is sent |
+| `check` | Compares `.env` with production without printing any value (see [Drift check](#drift-check-check)). Exits with 1 when something differs |
+
+`--only` narrows `push` and `check`, and can be repeated. A value shaped like a variable name (`LINE_TOKEN`) selects that key; anything else (`github:`, `wrangler:secret:api`) is a target prefix. Several names or several prefixes select any of them; names and prefixes together select what matches both. A name that isn't in `targets` is a usage error, so a typo doesn't end in sending nothing.
+
+```sh
+node scripts/env.ts push --only LINE_TOKEN       # this key only, to all its targets
+node scripts/env.ts push --only A_KEY --only B_KEY --dry-run
+node scripts/env.ts check                        # before a full push
+```
+
+When you change one value, send that key with `--only`. A full `push` overwrites every secret with the value in your `.env`, so a stale `.env` breaks production. Run `check` first.
 
 Targets:
 
@@ -52,6 +64,29 @@ Targets:
 
 A key with an empty list stays local (for example, a token only used by `run`).
 
+### Drift check (`check`)
+
+Secrets can't be read back from GitHub or Workers. So `push` leaves a fingerprint of each secret it sends in a GitHub repository variable (`ENV_FINGERPRINTS`), and `check` compares it with the fingerprint of the value in `.env`:
+
+| Output | Meaning |
+| --- | --- |
+| `一致` | Same as production |
+| `本番と違う` | Differs from production |
+| `本番にない` | In `.env`, not in production |
+| `.env にない` | In production, empty or missing in `.env` |
+| `記録なし` | In production, but not sent by a version that records fingerprints, so only its presence is known. A `push` of that key records it |
+| `取得できない` | The list of names couldn't be fetched (login, permissions, a missing Worker) |
+
+`check` exits with 1 for `本番と違う`, `本番にない`, `.env にない`, and `取得できない`. `github:variable` values are readable, so they are compared directly. Secrets are listed by name (`gh secret list`, `wrangler secret list`) to tell whether they exist.
+
+The fingerprint is 12 characters of scrypt over the value, the key name, and a random salt kept in the same record. Neither the value nor the fingerprint is printed. Limits:
+
+- A secret changed outside `push` (the dashboard, `wrangler secret put` by hand) keeps the old fingerprint. `check` then reports a difference until the key is pushed again.
+- Anyone who can read the repository's variables can read the record. A long random token can't be recovered from it, but a short or guessable value (an email address) can be confirmed by guessing. scrypt makes each guess slow, not impossible.
+- Recording needs `gh` logged in with permission to set variables. Without it, `push` still sends the values and warns that nothing was recorded.
+
+`fingerprints: { variable: 'NAME' }` changes the variable, and `fingerprints: false` turns recording off (`check` then reports secrets as `記録なし`).
+
 ## Terraform (`tf`)
 
 With `terraform: { stateBucket, stateKeyPrefix, tokenVar? }`, `tf` runs `terraform` prepared for a partial S3 backend (`backend "s3" {}`) on R2:
@@ -61,7 +96,7 @@ With `terraform: { stateBucket, stateKeyPrefix, tokenVar? }`, `tf` runs `terrafo
 - The R2 credentials are derived from the token with `r2CredentialsOf` (`AWS_ACCESS_KEY_ID` is the token's ID, `AWS_SECRET_ACCESS_KEY` the SHA-256 of its value), unless `.env` sets them explicitly.
 - `init` gets the backend settings: the bucket, the key `<stateKeyPrefix>/<stack directory name>.tfstate` (from `-chdir`), `use_lockfile=true` for state locking, and the S3 checks R2 doesn't support turned off.
 
-Exit status: 0 on success, 1 when a subcommand fails, and 2 for a usage error (an unknown subcommand, or `run` without a command). `--help` prints the usage and exits with 0.
+Exit status: 0 on success, 1 when a subcommand fails or `check` finds a difference, and 2 for a usage error (an unknown subcommand, `run` without a command, or an `--only` name not in `targets`). `--help` prints the usage and exits with 0.
 
 `commands` adds repository-specific subcommands. Each one gets `ctx.values()` (the `.env` values) and `ctx.run(args, extra)` (like `run`, with extra variables on top of `.env`).
 

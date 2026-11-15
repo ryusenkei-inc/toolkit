@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.5.0
+
+### Added
+
+- `envCli`: `push --only <NAME>` sends only that key. `--only` can be repeated. A value not shaped like a variable name is still a target prefix (`--only github:`), so existing calls behave the same.
+- `envCli`: `check` compares `.env` with production without printing values: GitHub variables by value, secrets by a fingerprint that `push` records in the GitHub variable `ENV_FINGERPRINTS`. It reports keys that differ, are missing in production, or are missing in `.env`, and exits with 1 for them.
+- `EnvConfig.fingerprints`: the variable for the fingerprints, or `false` to not record them.
+
+### Changed
+
+- `push` calls `gh` to record fingerprints, also when it only sends Worker secrets. Without `gh`, it warns and still sends the values.
+- `pushPlan(values, targets, only)` takes a list for `only`, and its entries may be key names.
+- An `--only` name that isn't in `targets` exits with 2.
+
 ## 0.4.1
 
 ### Fixed
