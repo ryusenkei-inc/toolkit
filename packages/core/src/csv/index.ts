@@ -8,7 +8,7 @@ export type CsvValue = string | number | boolean | null | undefined;
 export type CsvEncodeOptions = Readonly<{
   /** 区切りの文字（既定は `,`）。1文字で、引用符と改行は使えない */
   delimiter?: string;
-  /** 行の区切り（既定は RFC 4180 の `\r\n`） */
+  /** 行の区切り（既定は `\r\n`） */
   newline?: '\r\n' | '\n';
   /** 引用符で囲む値。`needed`（既定）は区切り・引用符・改行を含む値だけ、`always` はすべて */
   quote?: 'needed' | 'always';

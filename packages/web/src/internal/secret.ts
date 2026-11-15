@@ -1,7 +1,7 @@
 // 推測できないトークンと、その保存用のハッシュ（セッションと招待で共通。Web Crypto だけで動く）
 import { encodeBytes } from './encoding.ts';
 
-/** `bytes` バイトの乱数の base64url（32 バイトで43文字） */
+/** 乱数の base64url（`bytes` が32なら43文字） */
 export const randomToken = (bytes: number): string => encodeBytes(crypto.getRandomValues(new Uint8Array(bytes)), 'base64url');
 
 /** SHA-256 の hex（保存するのはハッシュだけにし、置き場所が漏れてもトークンを戻せないようにする。乱数のトークンなのでソルトは要らない） */
