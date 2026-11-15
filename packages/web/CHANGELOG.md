@@ -1,5 +1,31 @@
 # Changelog
 
+## 0.10.0
+
+Forms can take multiple-choice answers, sign the submitter in, accept one submission per person, and cap submissions per day. A handler can be called from pages on other origins.
+
+### Added
+
+- `multiChoice` fields (`choices`, `minItems?`, `maxItems?`; codes `too_few` and `too_many`). The value is a `string[]` in `choices` order. `requiredWhen` on a `multiChoice` field applies when any picked value is listed.
+- `submissionHandler({ authenticator })` with the `Authenticator` port (401 `unauthenticated`). The subject reaches destinations as `Submission.subject`. `jwtAuthenticator(verifier, { field?, header?, subject? })` reads a JWT from the `idToken` body field or a header.
+- `lineIdTokenVerifier({ channelId })` in `@ryusenkei/web/oidc`: `jwtVerifier` set up for LINE ID tokens (ES256).
+- `submissionHandler({ once: { store, scope? } })` with the `SubmissionOnce` port (`has`, `claim`, `release`; 409 `already_submitted`). The claim is released when the daily limit refuses or every destination fails.
+- `submissionHandler({ quota: { store, limit, key? } })` with the `DailyQuota` port (`take`; 429 `quota_exceeded`).
+- `d1SubmissionOnce`, `d1DailyQuota`, `submissionOnceTableSql`, and `dailyQuotaTableSql` in `@ryusenkei/web/cloudflare`.
+- `memorySubmissionOnce`, `memoryDailyQuota`, and `fakeAuthenticator` in `@ryusenkei/web/form/testing`.
+- `withCors(handler, { origins })` in `@ryusenkei/web`: answers preflights, adds `access-control-allow-origin`, and refuses other origins with 403 `forbidden_origin`.
+- `submitForm` sends a plain object as JSON.
+- `rateLimitKey` receives `subject` as well as `ip` and `form`.
+- `notificationText` joins `multiChoice` values with `copy.separator` (default `、`).
+- Standard messages for `too_few`, `too_many`, `unauthenticated`, `already_submitted`, `quota_exceeded`, and `forbidden_origin`.
+
+### Migration
+
+| Before (0.9) | After (0.10) |
+| --- | --- |
+| `FormValues` and `Submission.values` were `Partial<Record<F, string>>` | `Partial<Record<F, string \| readonly string[]>>` (`FieldValue`). Where a value is passed on as a string, narrow it with `typeof value === 'string'` |
+| `SubmissionErrorCode` and `FormMessageCode` without the new codes | add cases for `unauthenticated`, `already_submitted`, `quota_exceeded`, `forbidden_origin` (and `too_few`, `too_many` for `FormMessageCode`) in exhaustive switches and full message tables |
+
 ## 0.9.0
 
 Requires `@ryusenkei/core` 0.5. Arguments now follow one rule: required arguments are positional, optional settings go in a trailing options object, clocks are `now: () => number` (milliseconds), and `fetch` replacements are named `fetch`. Errors from wrong input are `UsageError` with a `code` instead of a plain `Error`.

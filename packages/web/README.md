@@ -10,11 +10,11 @@ pnpm add @ryusenkei/core @ryusenkei/web
 
 | Import | Contents |
 | --- | --- |
-| `@ryusenkei/web` | HTTP failure responses and the request ID |
+| `@ryusenkei/web` | HTTP failure responses, the request ID, and CORS |
 | `@ryusenkei/web/form` | Field declarations, sanitizing, validation |
-| `@ryusenkei/web/form/server` | The submission handler and its destinations (email, webhook) |
+| `@ryusenkei/web/form/server` | The submission handler, its destinations (email, webhook), and sign-in for submissions |
 | `@ryusenkei/web/form/client` | Submitting from the page |
-| `@ryusenkei/web/form/testing` | Fakes for the bot check, rate limiter, and destinations |
+| `@ryusenkei/web/form/testing` | Fakes for the bot check, rate limiter, sign-in, and destinations; in-memory once-per-person and daily limits |
 | `@ryusenkei/web/legal` | Privacy policy, 特定商取引法 notice, advertising disclosure, operator details |
 | `@ryusenkei/web/mail` | The `Mail` shape, the `Mailer` interface, and the checks before sending |
 | `@ryusenkei/web/mail/testing` | An in-memory `Mailer` |
@@ -69,6 +69,21 @@ export default {
 - `context`: fields for the log line and the report (`stage`, `method`, `path`, and any others such as a tenant ID).
 - `body`: builds the body from `{ failure, requestId, error }` when an API has its own error contract, for example `({ failure, requestId }) => ({ code: failure.code, requestId })`. The status and headers stay the same. The default body never carries the error message; with `body`, what goes in is up to you.
 
+### CORS
+
+`withCors(handler, { origins })` lets pages on other origins call a handler, for example a LIFF page posting JSON to a form handler on its own Worker:
+
+```ts
+import { withCors } from '@ryusenkei/web';
+
+const handle = withCors(submissionHandler({ forms: { survey }, destinations }), { origins: ['https://liff.example.com'] });
+```
+
+- `OPTIONS` from an allowed origin gets 204 with `access-control-allow-methods` (`methods`, default `POST`), `access-control-allow-headers` (`headers`, default `content-type`), and `access-control-max-age` (`maxAgeSec`, default 600). The handler is not called.
+- Other requests from an allowed origin go to the handler, and the response gets `access-control-allow-origin` and `access-control-expose-headers` (`exposeHeaders`, default `x-request-id` and `retry-after`).
+- A request or preflight whose `Origin` is not allowed gets 403 `{ "ok": false, "error": "forbidden_origin" }` without calling the handler. The request's own origin is always allowed, and requests without `Origin` (server to server) pass through.
+- Origins match exactly: `https://app.example.com`, without a trailing slash. Credentials (cookies) are not allowed.
+
 ## Forms (`@ryusenkei/web/form`)
 
 Contact, feedback, and sign-up forms without writing the plumbing each time: declare the fields, and get sanitizing, validation, standard error messages, rate limiting, bot checks, and delivery by email, webhook, or another API. The server side is a standard `(Request) => Response` function, so it runs on Cloudflare Workers, Vercel, Astro endpoints, and Hono.
@@ -94,15 +109,17 @@ export const feedback = defineForm({
 | `email` | `maxLength` (default 254) | As `text` | `too_long`, `invalid_email` |
 | `url` | `maxLength`, `hosts?` | As `text` | `too_long`, `invalid_url` (http/https only), `url_host` |
 | `choice` | `choices` | None | `invalid_choice` |
+| `multiChoice` | `choices`, `minItems?`, `maxItems?` | Duplicates removed, sorted in `choices` order | `invalid_choice`, `too_few`, `too_many` |
 
-- `required: true` adds `required`. `requiredWhen: { field: 'type', in: ['correction'] }` makes a field required only when another field has one of the listed values.
+- `required: true` adds `required`. `requiredWhen: { field: 'type', in: ['correction'] }` makes a field required only when another field has one of the listed values. When the other field is a `multiChoice`, it applies when any picked value is listed, for example a free-text field for 「その他」.
+- A `multiChoice` value is a `string[]`: every form-data entry with the field's name, or a JSON array of strings. Picking nothing counts as empty. Other fields are strings, so `values` has the type `Partial<Record<F, string | readonly string[]>>`.
 - Field order is the order for display, validation, and the notification body.
 - Lengths count UTF-16 code units, the same as HTML `maxlength`.
 - U+0085, U+2028, and U+2029 count as line breaks too, so a one-line field can't inject a mail header.
 - `refine(values)` adds rules that a declaration can't express. It runs only when every field passed.
 - Without `refine`, a declaration is plain JSON. A server can send it to the page, so the page and the handler check with the same declaration.
 
-`parseForm(form, formDataOrObject)` returns `{ ok: true, values }` or `{ ok: false, problems }`, where each problem is `{ path, code, params? }` (`too_long` has `params.max`, `too_short` has `params.min`).
+`parseForm(form, formDataOrObject)` returns `{ ok: true, values }` or `{ ok: false, problems }`, where each problem is `{ path, code, params? }` (`too_long` and `too_many` have `params.max`, `too_short` and `too_few` have `params.min`).
 
 ### Messages
 
@@ -138,7 +155,7 @@ export const handleForm = (env: Env) =>
   });
 ```
 
-The order is validate, then rate limit, then bot check, then deliver. Validation comes first, so only well-formed submissions count against the limit.
+The order is validate, then sign-in, rate limit, bot check, once per person, daily limit, and deliver. Validation comes first, so only well-formed submissions count against the limits.
 
 | Result | Status | `error` |
 | --- | --- | --- |
@@ -146,21 +163,24 @@ The order is validate, then rate limit, then bot check, then deliver. Validation
 | Not `POST` | 405 | `method_not_allowed` |
 | Body over `maxBodyBytes` (default 64 KiB) | 413 | `too_large` |
 | Invalid fields, or an unknown form name | 400 | `invalid`, with `problems` |
+| Sign-in failed (`authenticator`) | 401 | `unauthenticated` |
 | Rate limited | 429 | `rate_limited` |
 | Bot check rejected | 403 | `bot_check_failed` |
+| The same person again (`once`) | 409 | `already_submitted` |
+| Daily limit reached (`quota`) | 429 | `quota_exceeded` |
 | Every destination failed | 502 | `unavailable` |
 | Infrastructure failure (an outage, a missing setting, no destinations) | 503 / 500 | from `failureResponse` |
 
 How submissions are read and logged:
 
 - With several forms, the `form` field picks one; with one form it can be omitted. Form data and JSON bodies are both accepted.
-- The rate-limit key is `form:<client IP>` (`cf-connecting-ip`, then the first `x-forwarded-for`). `rateLimitKey: ({ ip, form }) => string` changes it, for example to share one limiter between products.
+- The rate-limit key is `form:<client IP>` (`cf-connecting-ip`, then the first `x-forwarded-for`). `rateLimitKey: ({ ip, form, subject }) => string` changes it, for example to share one limiter between products.
 - `now` (`() => number`) replaces the clock for `receivedAt`.
-- Submitted values are never logged; logs carry the form name, destination names, and the request ID.
+- Submitted values and the signed-in subject are never logged; logs carry the form name, destination names, and the request ID.
 
 Destinations:
 
-- `mailDestination`: sends `notificationText` (each field as `■ label` and its value, in declared order). Replies go to the submitter's `email` and `name`. `name` (default `mail`) tells several mail destinations apart.
+- `mailDestination`: sends `notificationText` (each field as `■ label` and its value, in declared order; `multiChoice` values joined with `copy.separator`, default `、`). Replies go to the submitter's `email` and `name`. `name` (default `mail`) tells several mail destinations apart.
 - `webhookDestination`: posts JSON (`{ event: 'form.submitted', id, form, values, order, receivedAt }`, where `id` is a UUID per submission for deduplication) or Slack text, with a 3-second timeout and no redirects.
   - With `secret`, it adds `x-signature: t=<seconds>,v1=<HMAC-SHA256>`, signed by `signWebhook` from [`@ryusenkei/web/webhook`](#webhooks-ryusenkeiwebwebhook). The receiver checks it with `verifyWebhookRequest`.
   - A `secret` that is present but empty (such as an unset environment variable) throws `ConfigError` instead of sending unsigned. Leave the option out to send unsigned.
@@ -181,6 +201,56 @@ submissionHandler({
 
 `rateLimiter` and `botCheck` take the `RateLimiter` and `BotCheck` ports exported from `@ryusenkei/web/form/server`: anything with `limit(key)` / `verify({ token, remoteIp?, action? })` returning a `Result` works. `cloudflareRateLimiter` and `turnstileBotCheck` implement them.
 
+### Sign-in, once per person, and a daily limit
+
+A LINE survey on a LIFF page, answered once per LINE user, at most 500 answers a day, stored in D1:
+
+```ts
+import { withCors } from '@ryusenkei/web';
+import { defineForm } from '@ryusenkei/web/form';
+import { jwtAuthenticator, submissionHandler, type Destination } from '@ryusenkei/web/form/server';
+import { d1DailyQuota, d1SubmissionOnce } from '@ryusenkei/web/cloudflare';
+import { lineIdTokenVerifier } from '@ryusenkei/web/oidc';
+
+const survey = defineForm({
+  fields: {
+    found: { kind: 'multiChoice', choices: ['sns', 'search', 'friend', 'other'], required: true },
+    foundOther: { kind: 'text', maxLength: 200, requiredWhen: { field: 'found', in: ['other'] } },
+  },
+});
+
+export const handleSurvey = (env: Env) => {
+  const answers: Destination = {
+    name: 'answers',
+    async deliver(s) {
+      await env.DB.prepare('INSERT INTO answers (subject, body, received_at) VALUES (?, ?, ?)').bind(s.subject, JSON.stringify(s.values), s.receivedAt).run();
+      return { ok: true, value: null };
+    },
+  };
+  return withCors(
+    submissionHandler({
+      forms: { survey },
+      authenticator: jwtAuthenticator(lineIdTokenVerifier({ channelId: env.LINE_CHANNEL_ID })),
+      once: { store: d1SubmissionOnce(env.DB, { name: 'DB' }) },
+      quota: { store: d1DailyQuota(env.DB, { timeZone: 'Asia/Tokyo', name: 'DB' }), limit: 500 },
+      destinations: [answers],
+    }),
+    { origins: ['https://liff.example.com'] },
+  );
+};
+```
+
+The page sends the ID token with the answers: `submitForm(url, { form: 'survey', idToken: liff.getIDToken(), found: ['sns', 'other'], foundOther: '…' })`.
+
+- `authenticator` takes the `Authenticator` port: `authenticate({ request, field })` returning `{ subject }` or an error code (401 `unauthenticated`). The subject reaches destinations as `submission.subject`.
+  - `jwtAuthenticator(verifier, { field, header, subject })` reads a JWT from the `idToken` body field (`field`), or first from a header (`header`, such as `'authorization'` for `Bearer <token>`; `field: null` reads only the header). It verifies the JWT with a `JwtVerifier` from [`@ryusenkei/web/oidc`](#oidc-ryusenkeiweboidc) and takes `sub` as the subject (`subject` changes that).
+  - The token field isn't declared in the form, so it never reaches `values`.
+- `once: { store, scope? }` accepts one submission per subject and scope (default scope: the form name). It needs `authenticator`; without one, `submissionHandler` throws `UsageError` (`once_without_authenticator`).
+  - `store` is the `SubmissionOnce` port: `has(scope, subject)`, `claim(scope, subject)` (`duplicate` when taken, and only one of several concurrent claims wins), and `release(scope, subject)`.
+  - The handler claims before delivering. If the daily limit refuses or every destination fails, it releases the claim, so the person can send again.
+  - `has` answers "already answered?" when the page opens. Authenticate the same way and call `store.has('survey', subject)`.
+- `quota: { store, limit, key? }` accepts at most `limit` submissions per day and key (default key: `form:<form name>`; `key: ({ form, ip, subject }) => string` counts per person or IP address instead). `store` is the `DailyQuota` port: `take(key, limit)` → `quota_exceeded` at the limit. The time zone that ends the day is set on the store. Workers Rate Limiting only has 10- and 60-second periods, so a daily limit needs this.
+
 ### Submit from the page (`@ryusenkei/web/form/client`)
 
 ```ts
@@ -190,11 +260,13 @@ const result = await submitForm('/api/form', new FormData(formElement));
 if (!result.ok) showErrors(result.error, result.problems); // codes only; 'network' when there was no usable response
 ```
 
-An accepted result has `id` when the handler set one.
+An accepted result has `id` when the handler set one. A plain object instead of `FormData` is sent as JSON (pass `multiChoice` values as arrays).
 
 ### Testing (`@ryusenkei/web/form/testing`)
 
-`fakeBotCheck()` and `fakeRateLimiter()` record calls and switch with `allow(false)`. `memoryDestination()` keeps what it received and fails with `fail('value' | 'throw')`.
+`fakeBotCheck()` and `fakeRateLimiter()` record calls and switch with `allow(false)`. `fakeAuthenticator(subject)` signs in as `subject` and switches with `as(subject | null)` (`null` fails). `memoryDestination()` keeps what it received and fails with `fail('value' | 'throw')`.
+
+`memorySubmissionOnce()` and `memoryDailyQuota({ timeZone, now? })` implement `SubmissionOnce` and `DailyQuota` in memory, for tests and local development. They are not shared between isolates.
 
 ## Legal documents (`@ryusenkei/web/legal`)
 
@@ -498,7 +570,7 @@ Keep pages out of search results with the `robots` meta tag, not `Disallow` in `
 
 ## Cloudflare Workers bindings (`@ryusenkei/web/cloudflare`)
 
-Cloudflare Workers bindings: the rate limiter and mail sender that `@ryusenkei/web/form` uses, file storage on R2 for `@ryusenkei/web/blob`, and the Analytics Engine adapters for `@ryusenkei/web/analytics`. The binding types are structural, so there is no dependency on `@cloudflare/workers-types`.
+Cloudflare Workers bindings: the rate limiter, mail sender, and D1 stores for once-per-person and daily limits that `@ryusenkei/web/form` uses, file storage on R2 for `@ryusenkei/web/blob`, and the Analytics Engine adapters for `@ryusenkei/web/analytics`. The binding types are structural, so there is no dependency on `@cloudflare/workers-types`.
 
 ### Usage
 
@@ -515,15 +587,25 @@ const files = r2BlobStore(env.FILES, { name: 'FILES' });
 | `cloudflareRateLimiter` | a `RateLimiter` from `@ryusenkei/web/form/server`: `limit(key)` → `rate_limited` over the limit | Rate Limiting (`ratelimits` in wrangler config; limit and period are set there). Counts are per Cloudflare location, not a strict global limit |
 | `cloudflareMailer` | a `Mailer` from `@ryusenkei/web/mail` | Email Service (`send_email`). The sender domain must be onboarded to Email Sending |
 | `r2BlobStore` | a `BlobStore` from `@ryusenkei/web/blob` | R2 (`r2_buckets`). R2 needs the length of a stream, so read a body of unknown length into an `ArrayBuffer` first |
+| `d1SubmissionOnce(binding, { table? })` | a `SubmissionOnce` from `@ryusenkei/web/form/server` | D1 (`d1_databases`). An insert into a `(scope, subject)` primary key, so one of several concurrent claims wins |
+| `d1DailyQuota(binding, { timeZone, table? })` | a `DailyQuota` | D1. One upsert per `take`, so concurrent submissions can't pass the limit. One row per key and day; old days are kept |
 | `analyticsEngineRecorder(binding, schema)` | an `EventRecorder` | Analytics Engine (`analytics_engine_datasets`). Fields go to `blob1`… and `double1`… in schema order, `index` to `index1` (queried as `index1` when it is a field name) |
 | `analyticsEngineCounts(schema, { accountId, token, dataset })` | an `EventCounts` | None: the SQL API over HTTP, with an API token that can read Account Analytics |
 
 Each adapter takes `{ name }`, the binding's name in your wrangler config, which goes into the `key` of the `ConfigError` for a missing binding (default `binding`).
 
+The D1 adapters don't create their tables. Put the SQL from `submissionOnceTableSql()` and `dailyQuotaTableSql()` (table names `submission_once` and `daily_quota`, or the name you pass to both the function and `table`) into a D1 migration:
+
+```sql
+CREATE TABLE IF NOT EXISTS submission_once (scope TEXT NOT NULL, subject TEXT NOT NULL, claimed_at INTEGER NOT NULL, PRIMARY KEY (scope, subject));
+CREATE TABLE IF NOT EXISTS daily_quota (key TEXT NOT NULL, day TEXT NOT NULL, count INTEGER NOT NULL, PRIMARY KEY (key, day));
+```
+
 ### Errors
 
 - A missing binding throws `ConfigError` when the adapter is first used, so a misconfigured deploy answers 503 `not_configured`.
-- A Rate Limiting or R2 binding failure throws `TransientError`. Deleting many R2 keys is split into requests of 1,000 keys (R2's limit).
+- A Rate Limiting, R2, or D1 binding failure throws `TransientError`. Deleting many R2 keys is split into requests of 1,000 keys (R2's limit).
+- A D1 table name other than letters, digits, and `_` throws `UsageError` (`invalid_table`), and a wrong `timeZone` throws `UsageError` (`invalid_time_zone`), both when the adapter is created.
 - `analyticsEngineRecorder` never throws into the request: a write failure is logged as `analytics_write_failed` and ignored. A missing number is written as `0` (`missingDouble` changes it).
 - `analyticsEngineCounts` corrects for sampling with `SUM(_sample_interval)`. `distinct` is not corrected and reads low once Analytics Engine samples. It reads 10,000 rows per call.
   - A 429 or 5xx throws `TransientError`. A 401 or 403, a missing `accountId` or `token`, or a malformed `dataset` throws `ConfigError`.
@@ -637,6 +719,8 @@ if (!claims.ok) return new Response(null, { status: 401 });
 - `algorithms` limits the accepted signatures (default RS256 and ES256). A key whose type doesn't fit the algorithm, or whose JWK `alg` differs from the token's, is rejected.
 - `iss` must equal `issuer`, and `aud` must contain `audience` (or one of an array).
 - The JWKS URL is not discovered from the issuer; pass it.
+
+`lineIdTokenVerifier({ channelId })` is `jwtVerifier` set up for LINE ID tokens (from `liff.getIDToken()` or the LINE SDK): issuer `https://access.line.me`, keys from `https://api.line.me/oauth2/v2.1/certs`, ES256 only, and `aud` equal to the LINE Login channel ID. Tokens from LINE Login on the web are signed with the channel secret (HS256) and are not accepted. A missing `channelId` throws `ConfigError` (`key: 'audience'`).
 
 ### Keys and failures
 

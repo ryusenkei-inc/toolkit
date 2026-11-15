@@ -7,14 +7,21 @@ export type FieldSpec =
   | Readonly<{ kind: 'text' | 'multiline'; maxLength: number; minLength?: number }>
   | Readonly<{ kind: 'email'; maxLength?: number }>
   | Readonly<{ kind: 'url'; maxLength: number; hosts?: readonly string[] }>
-  | Readonly<{ kind: 'choice'; choices: readonly string[] }>;
+  | Readonly<{ kind: 'choice'; choices: readonly string[] }>
+  | Readonly<{ kind: 'multiChoice'; choices: readonly string[]; minItems?: number; maxItems?: number }>;
 
-/** 別の項目の値がどれかに一致するときだけ必須にする（項目をまたぐ規則を、関数なしの宣言で書く） */
+/**
+ * 別の項目の値がどれかに一致するときだけ必須にする（項目をまたぐ規則を、関数なしの宣言で書く）
+ * - 参照する項目が `multiChoice` なら、選んだ値のどれかが `in` に含まれるとき
+ */
 export type RequiredWhen = Readonly<{ field: string; in: readonly string[] }>;
 
 export type FieldEntry = FieldSpec & Readonly<{ required?: boolean; requiredWhen?: RequiredWhen }>;
 
-export type FormValues<F extends string = string> = Partial<Record<F, string>>;
+/** 項目の値。`multiChoice` は選んだ値の配列（宣言の `choices` の順）、ほかは文字列 */
+export type FieldValue = string | readonly string[];
+
+export type FormValues<F extends string = string> = Partial<Record<F, FieldValue>>;
 
 /**
  * フォームの宣言
@@ -32,9 +39,9 @@ export const defineForm = <F extends string>(form: Form<F>): Form<F> => form;
 
 /**
  * 検査のエラーコード（文言は画面側の辞書で引く）
- * - `too_long` は `params.max`、`too_short` は `params.min` に上限・下限
+ * - `too_long`・`too_many` は `params.max`、`too_short`・`too_few` は `params.min` に上限・下限
  */
-export type FieldErrorCode = 'required' | 'too_long' | 'too_short' | 'invalid_email' | 'invalid_url' | 'url_host' | 'invalid_choice';
+export type FieldErrorCode = 'required' | 'too_long' | 'too_short' | 'invalid_email' | 'invalid_url' | 'url_host' | 'invalid_choice' | 'too_many' | 'too_few';
 
 export type ParseResult<F extends string = string> = Readonly<{ ok: true; values: FormValues<F> }> | Readonly<{ ok: false; problems: readonly Problem[] }>;
 
@@ -54,14 +61,23 @@ export const multiLine = (value: string): string =>
     .replace(/[\u0000-\u0009\u000b-\u001f\u007f]/g, '')
     .trim();
 
-const read = (input: FormData | Readonly<Record<string, unknown>>, name: string): string => {
+type Input = FormData | Readonly<Record<string, unknown>>;
+
+const read = (input: Input, name: string): string => {
   const value = input instanceof FormData ? input.get(name) : Object.hasOwn(input, name) ? input[name] : undefined;
   return typeof value === 'string' ? value : '';
 };
 
+// 複数選択は、フォームの同じ名前の値の全部か、JSON の文字列の配列（1つの文字列は1件）。文字列でない値は `null`（選択肢にない値として扱う）
+const readAll = (input: Input, name: string): (string | null)[] => {
+  const value = input instanceof FormData ? input.getAll(name) : Object.hasOwn(input, name) ? input[name] : undefined;
+  const items: unknown[] = Array.isArray(value) ? value : value === undefined || value === null || value === '' ? [] : [value];
+  return items.filter((v) => v !== '').map((v) => (typeof v === 'string' ? v : null));
+};
+
 const normalize = (spec: FieldSpec, raw: string) => (spec.kind === 'multiline' ? multiLine(raw) : spec.kind === 'choice' ? raw : oneLine(raw));
 
-function check(name: string, spec: FieldSpec, value: string): Problem | undefined {
+function check(name: string, spec: Exclude<FieldSpec, { kind: 'multiChoice' }>, value: string): Problem | undefined {
   switch (spec.kind) {
     case 'choice':
       return spec.choices.includes(value) ? undefined : { path: name, code: 'invalid_choice' };
@@ -82,28 +98,50 @@ function check(name: string, spec: FieldSpec, value: string): Problem | undefine
   }
 }
 
+function checkMany(name: string, spec: Extract<FieldSpec, { kind: 'multiChoice' }>, items: readonly (string | null)[]): Problem | readonly string[] {
+  if (items.some((v) => v === null || !spec.choices.includes(v))) return { path: name, code: 'invalid_choice' };
+  const picked = spec.choices.filter((c) => items.includes(c));
+  if (spec.maxItems !== undefined && picked.length > spec.maxItems) return { path: name, code: 'too_many', params: { max: spec.maxItems } };
+  if (spec.minItems !== undefined && picked.length < spec.minItems) return { path: name, code: 'too_few', params: { min: spec.minItems } };
+  return picked;
+}
+
 /**
  * 送信された値を整形して検査する
  * - 宣言にない項目は無視する
  * - 未入力の任意の項目は値に含めない
  * - `requiredWhen` は、参照する項目の整形した値で判定する
+ * - `multiChoice` の重複は1つにし、宣言の `choices` の順に並べる。1つも選ばなければ未入力
  */
-export function parseForm<F extends string>(form: Form<F>, input: FormData | Readonly<Record<string, unknown>>): ParseResult<F> {
+export function parseForm<F extends string>(form: Form<F>, input: Input): ParseResult<F> {
   const problems: Problem[] = [];
   const values: FormValues<F> = {};
   const names = Object.keys(form.fields) as F[];
-  const normalized = new Map(names.map((name) => [name as string, normalize(form.fields[name], read(input, name))]));
-  const required = (entry: FieldEntry) => entry.required === true || (entry.requiredWhen !== undefined && entry.requiredWhen.in.includes(normalized.get(entry.requiredWhen.field) ?? ''));
+  const normalized = new Map<string, string | (string | null)[]>(names.map((name) => {
+    const spec = form.fields[name];
+    return [name, spec.kind === 'multiChoice' ? readAll(input, name) : normalize(spec, read(input, name))];
+  }));
+  const matches = (when: RequiredWhen) => {
+    const value = normalized.get(when.field) ?? '';
+    return typeof value === 'string' ? when.in.includes(value) : value.some((v) => v !== null && when.in.includes(v));
+  };
+  const required = (entry: FieldEntry) => entry.required === true || (entry.requiredWhen !== undefined && matches(entry.requiredWhen));
   for (const name of names) {
     const entry = form.fields[name];
     const value = normalized.get(name) ?? '';
-    if (!value) {
+    if (value.length === 0) {
       if (required(entry)) problems.push({ path: name, code: 'required' });
       continue;
     }
-    const problem = check(name, entry, value);
+    if (entry.kind === 'multiChoice') {
+      const result = checkMany(name, entry, value as (string | null)[]);
+      if ('code' in result) problems.push(result);
+      else values[name] = result;
+      continue;
+    }
+    const problem = check(name, entry, value as string);
     if (problem) problems.push(problem);
-    else values[name] = value;
+    else values[name] = value as string;
   }
   if (problems.length === 0 && form.refine) problems.push(...form.refine(values));
   return problems.length ? { ok: false, problems } : { ok: true, values };

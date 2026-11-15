@@ -1,6 +1,6 @@
 import { ConfigError } from '@ryusenkei/core';
 import { beforeAll, describe, expect, it } from 'vitest';
-import { jwtFromRequest, jwtVerifier, type JwtVerifierOptions } from './index.ts';
+import { jwtFromRequest, jwtVerifier, lineIdTokenVerifier, type JwtVerifierOptions } from './index.ts';
 
 const ISS = 'https://login.example.com';
 const JWKS = 'https://login.example.com/.well-known/jwks.json';
@@ -67,5 +67,27 @@ describe('jwtFromRequest', () => {
     expect(jwtFromRequest(request({ authorization: 'Basic abc' }), 'authorization')).toBeUndefined();
     expect(jwtFromRequest(request({ 'x-operator-jwt': 'op' }), ['cf-access-jwt-assertion', 'x-operator-jwt'])).toBe('op');
     expect(jwtFromRequest(request({}), 'cf-access-jwt-assertion')).toBeUndefined();
+  });
+});
+
+describe('lineIdTokenVerifier', () => {
+  const line = { iss: 'https://access.line.me', aud: '1234567890', sub: 'U0123', exp: NOW + 600 };
+
+  it('LINE の発行元と鍵の一覧で ES256 の ID トークンを検証し、RS256 は拒否する', async () => {
+    const urls: string[] = [];
+    const fetcher = (async (url: string) => {
+      urls.push(url);
+      return Response.json({ keys });
+    }) as unknown as typeof fetch;
+    const verifier = lineIdTokenVerifier({ channelId: '1234567890', fetch: fetcher, now: () => NOW_MS });
+    expect(await verifier.verify(await signEs256(line))).toEqual({ ok: true, value: line });
+    expect(urls).toEqual(['https://api.line.me/oauth2/v2.1/certs']);
+    expect(await verifier.verify(await signEs256({ ...line, aud: 'other' }))).toEqual({ ok: false, error: 'unauthenticated' });
+    expect(await verifier.verify(await signEs256({ ...line, iss: ISS }))).toEqual({ ok: false, error: 'unauthenticated' });
+    expect(await verifier.verify(await signEs256(line, { alg: 'RS256', kid: 'rsa1' }))).toEqual({ ok: false, error: 'unauthenticated' });
+  });
+
+  it('channelId がなければ ConfigError', async () => {
+    await expect(lineIdTokenVerifier({ channelId: undefined, fetch: jwks }).verify('a.b.c')).rejects.toMatchObject({ name: 'ConfigError', key: 'audience' });
   });
 });

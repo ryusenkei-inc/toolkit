@@ -3,6 +3,7 @@
 // - 出来事の項目の名前と列の順は使う側の値（`defineEventSchema`）
 // - 送り口（ブラウザの sendBeacon）は `@ryusenkei/web/analytics/client`
 import { UsageError } from '@ryusenkei/core';
+import { dayIn } from '../internal/day.ts';
 
 /**
  * 出来事の形。項目の順が、位置で持つ記録先の列の順（Analytics Engine の `blob1`〜、`double1`〜）
@@ -56,8 +57,7 @@ export type CountRow<B extends string = string> = Readonly<{ day: string; keys: 
 /** 集計の読み込み元。行は日、`groupBy` の順に並ぶ */
 export type EventCounts<B extends string = string> = Readonly<{ count(query: CountQuery<B>): Promise<readonly CountRow<B>[]> }>;
 
-/** 時間帯 `timeZone` での日付（`YYYY-MM-DD`） */
-export const dayIn = (timeZone: string, at: Date | number = Date.now()): string => new Intl.DateTimeFormat('en-CA', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit' }).format(at);
+export { dayIn } from '../internal/day.ts';
 
 const BOT = /bot|crawl|spider|slurp|preview|monitor|headless/i;
 

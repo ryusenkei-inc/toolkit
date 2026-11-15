@@ -2,7 +2,19 @@
 import type { Problem } from '@ryusenkei/core';
 
 /** 受け取りの処理が返すエラーコード（文言は画面側の辞書で引く） */
-export type SubmissionErrorCode = 'invalid' | 'too_large' | 'rate_limited' | 'bot_check_failed' | 'unavailable' | 'not_configured' | 'internal' | 'method_not_allowed';
+export type SubmissionErrorCode =
+  | 'invalid'
+  | 'too_large'
+  | 'rate_limited'
+  | 'bot_check_failed'
+  | 'unauthenticated'
+  | 'already_submitted'
+  | 'quota_exceeded'
+  | 'forbidden_origin'
+  | 'unavailable'
+  | 'not_configured'
+  | 'internal'
+  | 'method_not_allowed';
 
 export type SubmitResult =
   | Readonly<{ ok: true; id?: string | null }>
@@ -14,11 +26,15 @@ export type SubmitResult =
       retryAfterSec?: number;
     }>;
 
-/** フォームを送信し、結果をコードで返す（例外を投げない） */
-export async function submitForm(url: string, body: FormData, options: { fetch?: typeof fetch; signal?: AbortSignal } = {}): Promise<SubmitResult> {
+/**
+ * フォームを送信し、結果をコードで返す（例外を投げない）
+ * - `FormData` はそのまま、オブジェクトは JSON で送る（複数選択は文字列の配列）
+ */
+export async function submitForm(url: string, body: FormData | Readonly<Record<string, unknown>>, options: { fetch?: typeof fetch; signal?: AbortSignal } = {}): Promise<SubmitResult> {
   let res: Response;
+  const init: RequestInit = body instanceof FormData ? { body } : { body: JSON.stringify(body), headers: { 'content-type': 'application/json' } };
   try {
-    res = await (options.fetch ?? fetch)(url, { method: 'POST', body, ...(options.signal && { signal: options.signal }) });
+    res = await (options.fetch ?? fetch)(url, { method: 'POST', ...init, ...(options.signal && { signal: options.signal }) });
   } catch {
     return { ok: false, error: 'network', problems: [] };
   }

@@ -115,3 +115,47 @@ describe('文言の辞書', () => {
     expect(formMessage('too_long', { params: { max: 5 }, messages: { too_long: '{max}字まで' } })).toBe('5字まで');
   });
 });
+
+describe('複数選択', () => {
+  const survey = defineForm({
+    fields: {
+      found: { kind: 'multiChoice', choices: ['sns', 'search', 'friend', 'other'], required: true, maxItems: 3 },
+      foundOther: { kind: 'text', maxLength: 100, requiredWhen: { field: 'found', in: ['other'] } },
+      extras: { kind: 'multiChoice', choices: ['a', 'b'], minItems: 2 },
+    },
+  });
+  const many = (entries: [string, string][]) => {
+    const data = new FormData();
+    for (const [k, v] of entries) data.append(k, v);
+    return data;
+  };
+
+  it('フォームの同じ名前の値と JSON の配列を、重複を除いて宣言の順に並べる', () => {
+    expect(parseForm(survey, many([['found', 'friend'], ['found', 'sns'], ['found', 'friend']]))).toEqual({ ok: true, values: { found: ['sns', 'friend'] } });
+    expect(parseForm(survey, { found: ['search', 'sns'] })).toEqual({ ok: true, values: { found: ['sns', 'search'] } });
+    expect(parseForm(survey, { found: 'search' })).toEqual({ ok: true, values: { found: ['search'] } });
+  });
+
+  it('1つも選ばなければ未入力。選択肢にない値と文字列でない値は invalid_choice', () => {
+    expect(parseForm(survey, { found: [] })).toEqual({ ok: false, problems: [{ path: 'found', code: 'required' }] });
+    expect(parseForm(survey, many([['found', '']]))).toEqual({ ok: false, problems: [{ path: 'found', code: 'required' }] });
+    expect(parseForm(survey, { found: ['sns', 'tv'] })).toEqual({ ok: false, problems: [{ path: 'found', code: 'invalid_choice' }] });
+    expect(parseForm(survey, { found: ['sns', 1] })).toEqual({ ok: false, problems: [{ path: 'found', code: 'invalid_choice' }] });
+  });
+
+  it('maxItems は too_many、minItems は too_few', () => {
+    expect(parseForm(survey, { found: ['sns', 'search', 'friend', 'other'], foundOther: 'x' })).toEqual({ ok: false, problems: [{ path: 'found', code: 'too_many', params: { max: 3 } }] });
+    expect(parseForm(survey, { found: ['sns'], extras: ['a'] })).toEqual({ ok: false, problems: [{ path: 'extras', code: 'too_few', params: { min: 2 } }] });
+  });
+
+  it('requiredWhen は、選んだ値のどれかが含まれるときに必須', () => {
+    expect(parseForm(survey, { found: ['sns', 'other'] })).toEqual({ ok: false, problems: [{ path: 'foundOther', code: 'required' }] });
+    expect(parseForm(survey, { found: ['sns', 'other'], foundOther: '雑誌' })).toEqual({ ok: true, values: { found: ['sns', 'other'], foundOther: '雑誌' } });
+    expect(parseForm(survey, { found: ['sns'] }).ok).toBe(true);
+  });
+
+  it('文言がある', () => {
+    expect(problemMessage({ path: 'found', code: 'too_many', params: { max: 3 } })).toBe('3個まで選んでください');
+    expect(FORM_MESSAGES_JA.too_few).toContain('{min}');
+  });
+});
