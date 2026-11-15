@@ -83,6 +83,34 @@ describe('privacyPolicy', () => {
     expect(() => privacyPolicy({ ...draft, enactedOn: '2026-11-07' })).toThrow(LegalDeclarationError);
   });
 
+  it('主語を指定すると、前文で運営者を定義し、本文の「当社」を置き換える', () => {
+    const doc = privacyPolicy({ ...declaration, subject: 'Example', speaker: '当サイト' });
+    expect(doc.intro[0]).toBe('Example（以下「本サイト」といいます。）の運営者（以下「当サイト」といいます。）は、本サイトの運営にあたり取得した利用者の個人情報等の取扱いについて、以下のとおりプライバシーポリシー（以下「本ポリシー」といいます。）を定めます。');
+    expect(doc.articles[0]!.paragraphs[0]).toBe('当サイトは、本サイトで以下の情報を取得し、それぞれの目的で利用します。');
+    expect(JSON.stringify(doc)).not.toContain('当社');
+    expect(() => privacyPolicy({ ...declaration, speaker: '当サイト', subjectShort: '当サイト' })).toThrow(LegalDeclarationError);
+  });
+
+  it('窓口にフォームを指定すると、お問い合わせ先と運営者の表の窓口をフォームにする', () => {
+    const contact = privacyPolicy({ ...declaration, contact: { url: '/contact' } }).articles.at(-2)!;
+    expect(contact.paragraphs[0]).toEqual(['本ポリシーに関するご意見、ご質問、個人情報等の取扱いに関するお問い合わせは、', { url: '/contact', text: 'お問い合わせのフォーム' }, 'からご連絡ください。']);
+    expect(contact.table?.at(-1)).toEqual({ label: '窓口', value: [{ url: '/contact', text: 'お問い合わせのフォーム' }] });
+    expect(operatorRows(operator, { contact: { email: 'privacy@example.com' } }).at(-1)).toEqual({ label: '窓口', value: [{ email: 'privacy@example.com' }] });
+  });
+
+  it('閲覧の記録の条を、保管期間の直後に出す', () => {
+    const doc = privacyPolicy({ ...declaration, accessLog: { items: ['閲覧したページ', '日付'], purposes: ['記事の改善'], excludes: ['IP アドレス', 'Cookie'], keepsAggregates: true } });
+    expect(doc.articles[2]).toEqual({
+      title: '閲覧の記録',
+      paragraphs: [
+        '当サイトは、閲覧の記録として、閲覧したページ、日付を取得し、記事の改善のために利用します。',
+        '閲覧の記録に含めない情報: IP アドレス、Cookie',
+        '当社は、閲覧の記録を、個人を特定する目的で利用しません。',
+        '閲覧の記録を集計した、個人を特定できない統計（日ごとの閲覧数など）は、期間を定めずに保管することがあります。',
+      ],
+    });
+  });
+
   it('改定の履歴の最新を revisedOn に', () => {
     expect(privacyPolicy({ ...declaration, revisions: [{ date: '2027-01-01', note: '外部のサービスを追加' }] }).revisedOn).toBe('2027-01-01');
   });
