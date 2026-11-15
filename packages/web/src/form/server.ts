@@ -1,8 +1,9 @@
 // フォームの受け取りの処理（Web 標準の Request → Response。Workers、Vercel、Astro、Hono で使える）
-// 順: 検査 → 回数の制限 → bot の判定 → 届け先（検査を先にし、正しい送信だけを数える）
-import { classifyFailure, ConfigError, log, type ErrorReporter, type Result } from '@ryusenkei/core';
+// 順: 検査 → 主体の認証 → 回数の制限 → bot の判定 → 1回だけの確保 → 日ごとの上限 → 届け先（検査を先にし、正しい送信だけを数える）
+import { classifyFailure, ConfigError, err, log, ok, UsageError, type ErrorReporter, type Result } from '@ryusenkei/core';
 import { failureResponse, REQUEST_ID_HEADER, withRequestId } from '../http/index.ts';
 import type { MailAddress, Mailer } from '../mail/index.ts';
+import { jwtFromRequest, type JwtClaims, type JwtVerifier } from '../oidc/index.ts';
 import { signWebhook, type WebhookScheme, type WebhookSecrets } from '../webhook/index.ts';
 import { parseForm, type Form, type FormValues } from './index.ts';
 
@@ -18,8 +19,42 @@ export type BotCheck<E extends string = string> = Readonly<{ verify(input: BotCh
 /** キー（IP アドレスなど）ごとの回数の制限のポート（`@ryusenkei/web/cloudflare` の `cloudflareRateLimiter` が実装） */
 export type RateLimiter<E extends string = string> = Readonly<{ limit(key: string): Promise<Result<void, E>> }>;
 
-/** 受け取った送信。`order` は宣言の項目の順 */
-export type Submission = Readonly<{ form: string; values: FormValues; order: readonly string[]; receivedAt: string }>;
+/** 主体の認証に渡す値。`field` は本文の項目の文字列の値 */
+export type AuthenticateInput = Readonly<{ request: Request; field(name: string): string | undefined }>;
+
+/**
+ * 送信した主体（LINE のユーザーなど）の認証のポート（`jwtAuthenticator` が実装）
+ * - 認証できなければ `E` のコードで返し、検証の API の障害は `TransientError`、設定の不足は `ConfigError` を投げる
+ */
+export type Authenticator<E extends string = string> = Readonly<{ authenticate(input: AuthenticateInput): Promise<Result<Readonly<{ subject: string }>, E>> }>;
+
+/**
+ * 主体ごとに1回だけ受け付けるためのポート
+ * - 実装: `@ryusenkei/web/cloudflare` の `d1SubmissionOnce`
+ * - 試験と手元の開発の実装: `@ryusenkei/web/form/testing` の `memorySubmissionOnce`
+ * - `scope` は受け付けの単位（既定はフォームの名前）、`subject` は認証した主体
+ * - `claim` は同時の送信でも1つだけが成功する。届け先がすべて失敗したら `release` で戻す
+ * - `has` は、画面を開いたときの「回答済みか」の問い合わせにも使う
+ */
+export type SubmissionOnce = Readonly<{
+  has(scope: string, subject: string): Promise<boolean>;
+  claim(scope: string, subject: string): Promise<Result<void, 'duplicate'>>;
+  release(scope: string, subject: string): Promise<void>;
+}>;
+
+/**
+ * キーごとの日ごとの受付の上限のポート
+ * - 実装: `@ryusenkei/web/cloudflare` の `d1DailyQuota`
+ * - 試験と手元の開発の実装: `@ryusenkei/web/form/testing` の `memoryDailyQuota`
+ * - `take` は、その日の数が `limit` 未満なら1つ数えて成功する。日の区切りの時間帯は実装を作るときに渡す
+ */
+export type DailyQuota = Readonly<{ take(key: string, limit: number): Promise<Result<void, 'quota_exceeded'>> }>;
+
+/** 回数の制限と日ごとの上限のキーを決める関数に渡す値 */
+export type SubmissionKeyInput = Readonly<{ ip: string | undefined; form: string; subject: string | undefined }>;
+
+/** 受け取った送信。`order` は宣言の項目の順、`subject` は認証した主体（`authenticator` があるとき） */
+export type Submission = Readonly<{ form: string; values: FormValues; order: readonly string[]; receivedAt: string; subject?: string }>;
 
 /** 届け先。失敗は値で返すか、例外を投げる（どちらも「その届け先は失敗」として扱う）。`name` は届け先の間で重ならないようにする */
 export type Destination = Readonly<{ name: string; deliver(submission: Submission, ctx: { requestId: string }): Promise<Result<unknown, string>> }>;
@@ -36,14 +71,26 @@ export type SubmissionHandlerOptions = {
   destinations: readonly Destination[];
   /** 受付の応答に入れる `id` を、届け先の結果（届け先の名前ごと）から選ぶ（保存先が返した受付の番号など） */
   acceptedId?: (results: Readonly<Record<string, DeliveryResult>>) => string | null | undefined;
+  /** 送信した主体の認証。認証できなければ `401 unauthenticated` */
+  authenticator?: Authenticator;
   rateLimiter?: RateLimiter;
   /** 回数の制限のキー（既定は `form:<送信元の IP アドレス>`、IP アドレスがなければ `form:unknown`） */
-  rateLimitKey?: (input: Readonly<{ ip: string | undefined; form: string }>) => string;
+  rateLimitKey?: (input: SubmissionKeyInput) => string;
   botCheck?: BotCheck;
   /** bot の判定のトークンの項目（既定は Turnstile の `cf-turnstile-response`） */
   botTokenField?: string;
   /** bot の判定で照合する action */
   botAction?: string;
+  /**
+   * 主体ごとに1回だけ受け付ける（`authenticator` が要る）。2回目は `409 already_submitted`
+   * - `scope`: 受け付けの単位（既定はフォームの名前）
+   */
+  once?: Readonly<{ store: SubmissionOnce; scope?: (input: Readonly<{ form: string }>) => string }>;
+  /**
+   * 日ごとの受付の上限。超えたら `429 quota_exceeded`
+   * - `key`: 数える単位（既定は `form:<フォームの名前>`。主体や IP アドレスごとにもできる）
+   */
+  quota?: Readonly<{ store: DailyQuota; limit: number; key?: (input: SubmissionKeyInput) => string }>;
   /** 回数の制限のキーにする送信元の IP アドレス（既定は `cf-connecting-ip`、なければ `x-forwarded-for` の先頭） */
   clientIp?: (request: Request) => string | undefined;
   /** 本文の上限（バイト、既定は `64 KiB`） */
@@ -85,16 +132,24 @@ async function readBody(request: Request, maxBytes: number): Promise<FormData | 
  * | 受け付け（届け先の1つ以上が成功） | 200 | —（`acceptedId` があれば本文に `id`） |
  * | 本文が大きすぎる | 413 | `too_large` |
  * | 検査の失敗・フォームの名前の改変 | 400 | `invalid`（`problems` に項目ごとのコード） |
+ * | 主体を認証できない | 401 | `unauthenticated` |
  * | 回数の上限 | 429 | `rate_limited` |
  * | bot の判定で拒否 | 403 | `bot_check_failed` |
+ * | 同じ主体の2回目 | 409 | `already_submitted` |
+ * | 日ごとの上限 | 429 | `quota_exceeded` |
  * | 届け先がすべて失敗 | 502 | `unavailable` |
  * | 基盤の失敗（判定の API の障害、設定の不足、届け先が0件） | 503・500 | `failureResponse` |
+ *
+ * - `once` があるのに `authenticator` がなければ、作るときに `UsageError`（`once_without_authenticator`）
+ * - 1回だけの確保の後に日ごとの上限で断るか、届け先がすべて失敗したら、確保を戻す（もう一度送れる）
  */
 export function submissionHandler(options: SubmissionHandlerOptions): (request: Request, ctx?: { waitUntil?(promise: Promise<unknown>): void }) => Promise<Response> {
+  if (options.once && !options.authenticator) throw new UsageError('once_without_authenticator', '1回だけの受け付けには authenticator が要る');
   const formNames = Object.keys(options.forms);
   const formField = options.formField ?? 'form';
   const now = options.now ?? Date.now;
   const rateLimitKey = options.rateLimitKey ?? (({ ip }) => `form:${ip ?? 'unknown'}`);
+  const quotaKey = options.quota?.key ?? (({ form }) => `form:${form}`);
   return async (incoming, ctx) => {
     const { request, requestId } = withRequestId(incoming);
     if (request.method !== 'POST') return json({ ok: false, error: 'method_not_allowed', requestId }, 405, requestId, { allow: 'POST' });
@@ -115,9 +170,16 @@ export function submissionHandler(options: SubmissionHandlerOptions): (request: 
       const parsed = parseForm(form, body);
       if (!parsed.ok) return json({ ok: false, error: 'invalid', problems: parsed.problems, requestId }, 400, requestId);
 
+      let subject: string | undefined;
+      if (options.authenticator) {
+        const auth = await options.authenticator.authenticate({ request, field });
+        if (!auth.ok) return json({ ok: false, error: 'unauthenticated', requestId }, 401, requestId);
+        subject = auth.value.subject;
+      }
       const ip = (options.clientIp ?? defaultClientIp)(request);
+      const keyInput: SubmissionKeyInput = { ip, form: name, subject };
       if (options.rateLimiter) {
-        const limited = await options.rateLimiter.limit(rateLimitKey({ ip, form: name }));
+        const limited = await options.rateLimiter.limit(rateLimitKey(keyInput));
         if (!limited.ok) return json({ ok: false, error: 'rate_limited', requestId }, 429, requestId);
       }
       if (options.botCheck) {
@@ -125,7 +187,31 @@ export function submissionHandler(options: SubmissionHandlerOptions): (request: 
         if (!human.ok) return json({ ok: false, error: 'bot_check_failed', requestId }, 403, requestId);
       }
 
-      const submission: Submission = { form: name, values: parsed.values, order: Object.keys(form.fields), receivedAt: new Date(now()).toISOString() };
+      // 確保した後に断るときは戻す。戻せなくても応答は変えない（ログに残す）
+      let release = async (): Promise<void> => {};
+      if (options.once && subject !== undefined) {
+        const { store } = options.once;
+        const scope = options.once.scope?.({ form: name }) ?? name;
+        const claimed = await store.claim(scope, subject);
+        if (!claimed.ok) return json({ ok: false, error: 'already_submitted', requestId }, 409, requestId);
+        const who = subject;
+        release = () => store.release(scope, who).catch((e: unknown) => log('warn', 'form_once_release_failed', { requestId, form: name, error: e }));
+      }
+      if (options.quota) {
+        let taken: Result<void, 'quota_exceeded'>;
+        try {
+          taken = await options.quota.store.take(quotaKey(keyInput), options.quota.limit);
+        } catch (e) {
+          await release();
+          throw e;
+        }
+        if (!taken.ok) {
+          await release();
+          return json({ ok: false, error: 'quota_exceeded', requestId }, 429, requestId);
+        }
+      }
+
+      const submission: Submission = { form: name, values: parsed.values, order: Object.keys(form.fields), receivedAt: new Date(now()).toISOString(), ...(subject !== undefined && { subject }) };
       const results = await Promise.all(
         options.destinations.map(async (d) => {
           try {
@@ -139,7 +225,10 @@ export function submissionHandler(options: SubmissionHandlerOptions): (request: 
       // 入力の値はログに出さない（個人情報）
       const failed = results.filter((r) => !r.ok);
       for (const f of failed) if (!f.ok) log('warn', 'form_destination_failed', { requestId, form: name, destination: f.name, reason: f.reason, ...('error' in f && { error: f.error }) });
-      if (failed.length === results.length) return json({ ok: false, error: 'unavailable', requestId }, 502, requestId);
+      if (failed.length === results.length) {
+        await release();
+        return json({ ok: false, error: 'unavailable', requestId }, 502, requestId);
+      }
       log('info', 'form_received', { requestId, form: name, delivered: results.filter((r) => r.ok).map((r) => r.name) });
       const byName = Object.fromEntries(results.map((r): [string, DeliveryResult] => [r.name, r.ok ? { ok: true, value: r.value } : { ok: false, reason: r.reason }]));
       return json({ ok: true, requestId, ...(options.acceptedId && { id: options.acceptedId(byName) ?? null }) }, 200, requestId);
@@ -155,6 +244,8 @@ export type NotificationCopy = Readonly<{
   choices?: Readonly<Record<string, Readonly<Record<string, string>>>>;
   /** 未入力の項目の表示（既定は `—`） */
   none?: string;
+  /** 複数選択の値の区切り（既定は `、`） */
+  separator?: string;
   /** 本文の先頭（Slack の通知の見出しなど） */
   heading?: string;
   /** 本文の末尾 */
@@ -163,9 +254,11 @@ export type NotificationCopy = Readonly<{
 
 /** 通知の本文（`■ 項目の名前` と値を、宣言の順に並べる） */
 export function notificationText(submission: Submission, copy: NotificationCopy): string {
+  const label = (name: string, value: string) => copy.choices?.[name]?.[value] ?? value;
   const display = (name: string) => {
     const value = submission.values[name];
-    return value ? (copy.choices?.[name]?.[value] ?? value) : (copy.none ?? '—');
+    if (!value || value.length === 0) return copy.none ?? '—';
+    return typeof value === 'string' ? label(name, value) : value.map((v) => label(name, v)).join(copy.separator ?? '、');
   };
   const lines = submission.order.map((name) => `■ ${copy.labels[name] ?? name}\n${display(name)}`);
   return [...(copy.heading ? [copy.heading] : []), ...lines, ...(copy.footer ? [copy.footer] : [])].join('\n\n');
@@ -183,7 +276,7 @@ export type MailDestinationOptions = {
   replyTo?: (submission: Submission) => MailAddress | undefined;
 };
 
-const defaultReplyTo = (s: Submission): MailAddress | undefined => (s.values.email ? { email: s.values.email, ...(s.values.name && { name: s.values.name }) } : undefined);
+const defaultReplyTo = ({ values: { email, name } }: Submission): MailAddress | undefined => (typeof email === 'string' && email ? { email, ...(typeof name === 'string' && name && { name }) } : undefined);
 
 /** メールで届ける（返信すると送信した人に届く） */
 export function mailDestination(options: MailDestinationOptions): Destination {
@@ -280,6 +373,34 @@ export function httpDestination(options: HttpDestinationOptions): Destination {
       const res = await fetcher(options.url, { method: 'POST', headers, body, redirect: 'manual', signal: AbortSignal.timeout(options.timeoutMs ?? DEFAULT_WEBHOOK_TIMEOUT_MS) });
       if (!res.ok) return { ok: false, error: `status_${res.status}` };
       return { ok: true, value: (await res.json().catch(() => null)) as unknown };
+    },
+  };
+}
+
+export type JwtAuthenticatorOptions = {
+  /** トークンを読む本文の項目（既定は `idToken`。`header` だけを使うなら `null`） */
+  field?: string | null;
+  /** トークンを読むヘッダー（`@ryusenkei/web/oidc` の `jwtFromRequest`）。本文の項目より先に見る */
+  header?: string | readonly string[];
+  /** クレームから主体を取り出す（既定は `sub`） */
+  subject?: (claims: JwtClaims) => string | undefined;
+};
+
+/**
+ * JWT（LINE の ID トークンなど）で送信した主体を認証する（`Authenticator`）
+ * - 検証は `@ryusenkei/web/oidc` の `jwtVerifier`・`lineIdTokenVerifier` に任せる
+ * - トークンがない、検証を通らない、主体が取れないときは `unauthenticated`
+ */
+export function jwtAuthenticator(verifier: JwtVerifier, options: JwtAuthenticatorOptions = {}): Authenticator<'unauthenticated'> {
+  const field = options.field === undefined ? 'idToken' : options.field;
+  const subjectOf = options.subject ?? ((claims: JwtClaims) => (typeof claims.sub === 'string' ? claims.sub : undefined));
+  return {
+    async authenticate(input) {
+      const token = (options.header && jwtFromRequest(input.request, options.header)) || (field !== null ? input.field(field) : undefined);
+      const verified = await verifier.verify(token);
+      if (!verified.ok) return err('unauthenticated');
+      const subject = subjectOf(verified.value);
+      return subject ? ok({ subject }) : err('unauthenticated');
     },
   };
 }

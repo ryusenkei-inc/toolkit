@@ -3,8 +3,8 @@ import { memoryMailer } from '../mail/testing.ts';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { submitForm } from './client.ts';
 import { defineForm } from './index.ts';
-import { httpDestination, mailDestination, notificationText, submissionHandler, webhookDestination, type Destination, type Submission } from './server.ts';
-import { fakeBotCheck, fakeRateLimiter, memoryDestination } from './testing.ts';
+import { httpDestination, jwtAuthenticator, mailDestination, notificationText, submissionHandler, webhookDestination, type Destination, type Submission, type SubmissionOnce } from './server.ts';
+import { fakeAuthenticator, fakeBotCheck, fakeRateLimiter, memoryDailyQuota, memoryDestination, memorySubmissionOnce } from './testing.ts';
 import { verifyWebhook } from '../webhook/index.ts';
 
 afterEach(() => vi.restoreAllMocks());
@@ -251,5 +251,163 @@ describe('webhookDestination の選択肢', () => {
 
   it('heading は通知の本文の先頭', () => {
     expect(notificationText(submission, { ...copy, heading: '[Example] お問い合わせ' }).split('\n\n')[0]).toBe('[Example] お問い合わせ');
+  });
+});
+
+describe('主体の認証・1回だけ・日ごとの上限', () => {
+  const survey = defineForm({ fields: { found: { kind: 'multiChoice', choices: ['sns', 'search', 'other'], required: true }, note: { kind: 'text', maxLength: 100, requiredWhen: { field: 'found', in: ['other'] } } } });
+  const send = (body: Record<string, unknown>) => new Request('https://api.example.com/survey', { method: 'POST', headers: { 'content-type': 'application/json', 'cf-connecting-ip': '203.0.113.1' }, body: JSON.stringify(body) });
+  const NOON_JST = Date.parse('2026-11-15T03:00:00Z');
+  const setup = (limit = 10) => {
+    quiet();
+    const auth = fakeAuthenticator('U1');
+    const once = memorySubmissionOnce();
+    const d = memoryDestination();
+    const handle = submissionHandler({ forms: { survey }, destinations: [d], authenticator: auth, once: { store: once }, quota: { store: memoryDailyQuota({ timeZone: 'Asia/Tokyo', now: () => NOON_JST }), limit }, now: () => NOON_JST });
+    return { auth, once, d, handle };
+  };
+
+  it('認証した主体を Submission.subject で届け先へ渡し、2回目は 409 already_submitted', async () => {
+    const t = setup();
+    const res = await t.handle(send({ found: ['other', 'sns'], note: '雑誌' }));
+    expect(res.status).toBe(200);
+    expect(t.d.received[0]).toMatchObject({ form: 'survey', subject: 'U1', values: { found: ['sns', 'other'], note: '雑誌' } });
+    expect(await t.once.has('survey', 'U1')).toBe(true);
+    const again = await t.handle(send({ found: ['sns'] }));
+    expect(again.status).toBe(409);
+    expect(await again.json()).toMatchObject({ ok: false, error: 'already_submitted' });
+    expect(t.d.received).toHaveLength(1);
+  });
+
+  it('認証できなければ 401 unauthenticated。検査の失敗は認証より先', async () => {
+    const t = setup();
+    t.auth.as(null);
+    expect((await t.handle(send({ found: [] }))).status).toBe(400);
+    expect(t.auth.calls).toBe(0);
+    const res = await t.handle(send({ found: ['sns'] }));
+    expect(res.status).toBe(401);
+    expect(await res.json()).toMatchObject({ error: 'unauthenticated' });
+  });
+
+  it('日ごとの上限を超えたら 429 quota_exceeded で、確保を戻す', async () => {
+    const t = setup(1);
+    expect((await t.handle(send({ found: ['sns'] }))).status).toBe(200);
+    t.auth.as('U2');
+    const res = await t.handle(send({ found: ['sns'] }));
+    expect(res.status).toBe(429);
+    expect(await res.json()).toMatchObject({ error: 'quota_exceeded' });
+    expect(await t.once.has('survey', 'U2')).toBe(false);
+  });
+
+  it('届け先がすべて失敗したら 502 で、確保を戻す（もう一度送れる）', async () => {
+    const t = setup();
+    t.d.fail('value');
+    expect((await t.handle(send({ found: ['sns'] }))).status).toBe(502);
+    expect(await t.once.has('survey', 'U1')).toBe(false);
+    t.d.fail(false);
+    expect((await t.handle(send({ found: ['sns'] }))).status).toBe(200);
+  });
+
+  it('上限の数え方の失敗は基盤の失敗（503）で、確保を戻す', async () => {
+    quiet();
+    const once = memorySubmissionOnce();
+    const handle = submissionHandler({ forms: { survey }, destinations: [memoryDestination()], authenticator: fakeAuthenticator('U1'), once: { store: once }, quota: { store: { take: () => Promise.reject(new TransientError('d1 down')) }, limit: 10 } });
+    expect((await handle(send({ found: ['sns'] }))).status).toBe(503);
+    expect(await once.has('survey', 'U1')).toBe(false);
+  });
+
+  it('戻すのに失敗しても応答は変えない', async () => {
+    quiet();
+    const base = memorySubmissionOnce();
+    const once: SubmissionOnce = { ...base, release: () => Promise.reject(new Error('down')) };
+    const d = memoryDestination();
+    d.fail('throw');
+    const handle = submissionHandler({ forms: { survey }, destinations: [d], authenticator: fakeAuthenticator('U1'), once: { store: once } });
+    expect((await handle(send({ found: ['sns'] }))).status).toBe(502);
+  });
+
+  it('scope と上限のキーを変えられ、キーの関数に主体が渡る', async () => {
+    quiet();
+    const once = memorySubmissionOnce();
+    const keys: string[] = [];
+    const limiter = fakeRateLimiter();
+    const handle = submissionHandler({
+      forms: { survey },
+      destinations: [memoryDestination()],
+      authenticator: fakeAuthenticator('U1'),
+      once: { store: once, scope: ({ form }) => `${form}:2026` },
+      quota: { store: { take: async (key) => (keys.push(key), { ok: true, value: undefined }) }, limit: 1, key: ({ subject }) => `user:${subject}` },
+      rateLimiter: limiter,
+      rateLimitKey: ({ subject }) => `rl:${subject}`,
+    });
+    expect((await handle(send({ found: ['sns'] }))).status).toBe(200);
+    expect(await once.has('survey:2026', 'U1')).toBe(true);
+    expect(keys).toEqual(['user:U1']);
+    expect(limiter.keys).toEqual(['rl:U1']);
+  });
+
+  it('once があって authenticator がなければ、作るときに UsageError', () => {
+    expect(() => submissionHandler({ forms: { survey }, destinations: [memoryDestination()], once: { store: memorySubmissionOnce() } })).toThrow(expect.objectContaining({ name: 'UsageError', code: 'once_without_authenticator' }));
+  });
+
+  it('入力の値と主体をログに出さない', async () => {
+    const logs: string[] = [];
+    for (const level of ['info', 'warn', 'error'] as const) vi.spyOn(console, level).mockImplementation((line: string) => void logs.push(line));
+    const handle = submissionHandler({ forms: { survey }, destinations: [memoryDestination()], authenticator: fakeAuthenticator('U-secret'), once: { store: memorySubmissionOnce() } });
+    await handle(send({ found: ['other'], note: '秘密の記述' }));
+    expect(logs.length).toBeGreaterThan(0);
+    for (const line of logs) for (const value of ['U-secret', '秘密の記述']) expect(line).not.toContain(value);
+  });
+});
+
+describe('jwtAuthenticator', () => {
+  const verifier = (subject: unknown = 'U1') => {
+    const tokens: (string | null | undefined)[] = [];
+    return {
+      tokens,
+      async verify(token: string | null | undefined) {
+        tokens.push(token);
+        return token === 'good' ? { ok: true as const, value: { sub: subject } } : { ok: false as const, error: 'unauthenticated' as const };
+      },
+    };
+  };
+  const input = (fields: Record<string, string>, headers: Record<string, string> = {}) => ({ request: new Request('https://api.example.com/', { headers }), field: (name: string) => fields[name] });
+
+  it('本文の idToken を検証し、sub を主体にする', async () => {
+    const v = verifier();
+    expect(await jwtAuthenticator(v).authenticate(input({ idToken: 'good' }))).toEqual({ ok: true, value: { subject: 'U1' } });
+    expect(await jwtAuthenticator(v).authenticate(input({ idToken: 'bad' }))).toEqual({ ok: false, error: 'unauthenticated' });
+    expect(await jwtAuthenticator(v).authenticate(input({}))).toEqual({ ok: false, error: 'unauthenticated' });
+    expect(v.tokens).toEqual(['good', 'bad', undefined]);
+  });
+
+  it('ヘッダーを本文より先に見る。項目の名前と主体の取り出しを変えられる', async () => {
+    const v = verifier();
+    expect(await jwtAuthenticator(v, { header: 'authorization', field: null }).authenticate(input({ idToken: 'good' }, { authorization: 'Bearer good' }))).toMatchObject({ ok: true });
+    expect(await jwtAuthenticator(v, { header: 'authorization', field: null }).authenticate(input({ idToken: 'good' }))).toMatchObject({ ok: false });
+    expect(await jwtAuthenticator(v, { field: 'token', subject: (c) => `line:${String(c.sub)}` }).authenticate(input({ token: 'good' }))).toEqual({ ok: true, value: { subject: 'line:U1' } });
+  });
+
+  it('主体が取れなければ unauthenticated', async () => {
+    expect(await jwtAuthenticator(verifier(42)).authenticate(input({ idToken: 'good' }))).toEqual({ ok: false, error: 'unauthenticated' });
+  });
+});
+
+describe('複数選択の通知と JSON の送信', () => {
+  it('notificationText は選択肢の表示を区切りでつなぐ', () => {
+    const s: Submission = { form: 'survey', values: { found: ['sns', 'other'] }, order: ['found', 'none'], receivedAt: '' };
+    const copy = { labels: { found: 'きっかけ', none: 'なし' }, choices: { found: { sns: 'SNS', other: 'その他' } } };
+    expect(notificationText(s, copy)).toBe('■ きっかけ\nSNS、その他\n\n■ なし\n—');
+    expect(notificationText(s, { ...copy, separator: ' / ' })).toContain('SNS / その他');
+  });
+
+  it('submitForm はオブジェクトを JSON で送る', async () => {
+    let sent: RequestInit | undefined;
+    const fetcher = (async (_url: string, init: RequestInit) => {
+      sent = init;
+      return Response.json({ ok: true });
+    }) as unknown as typeof fetch;
+    expect(await submitForm('https://api.example.com/survey', { found: ['sns'] }, { fetch: fetcher })).toEqual({ ok: true });
+    expect(sent).toMatchObject({ method: 'POST', body: '{"found":["sns"]}', headers: { 'content-type': 'application/json' } });
   });
 });

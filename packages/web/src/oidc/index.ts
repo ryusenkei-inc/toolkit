@@ -143,3 +143,33 @@ export function jwtVerifier(options: JwtVerifierOptions): JwtVerifier {
     },
   };
 }
+
+export type LineIdTokenVerifierOptions = {
+  /** LINE Login のチャネル ID（`aud` と照合） */
+  channelId: string | undefined;
+  /** 鍵の一覧の取得の時間切れ（ミリ秒、既定は5秒） */
+  timeoutMs?: number;
+  /** テストで差し替える `fetch` と現在時刻（ミリ秒） */
+  fetch?: typeof fetch;
+  now?: () => number;
+};
+
+const LINE_ISSUER = 'https://access.line.me';
+const LINE_JWKS_URL = 'https://api.line.me/oauth2/v2.1/certs';
+
+/**
+ * LINE の ID トークン（LIFF の `liff.getIDToken()`、LINE SDK）の検証。`jwtVerifier` に LINE の発行元・鍵の一覧・ES256 を入れたもの
+ * - チャネルのシークレットで署名する HS256 のトークン（ウェブアプリの LINE Login）は受け付けない
+ * - `channelId` の不足は、検証のときに `ConfigError`（`key: 'audience'`）
+ */
+export function lineIdTokenVerifier(options: LineIdTokenVerifierOptions): JwtVerifier {
+  return jwtVerifier({
+    issuer: LINE_ISSUER,
+    audience: options.channelId,
+    jwksUrl: LINE_JWKS_URL,
+    algorithms: ['ES256'],
+    ...(options.timeoutMs !== undefined && { timeoutMs: options.timeoutMs }),
+    ...(options.fetch && { fetch: options.fetch }),
+    ...(options.now && { now: options.now }),
+  });
+}

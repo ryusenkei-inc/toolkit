@@ -10,7 +10,7 @@ const PATTERNS: { name: string; re: RegExp }[] = [
   // Cloudflare のアカウント・ゾーンの ID など
   { name: '32桁の16進数の ID', re: /\b[0-9a-f]{32}\b/i },
   { name: 'メールアドレス', re: /\b[\w.+-]+@(?!example\.(?:com|org|net)\b)[\w-]+(?:\.[\w-]+)+/ },
-  { name: 'URL', re: /https?:\/\/(?!(?:[\w-]+\.)*(?:example\.(?:com|org|net)|cloudflare\.com|cloudflareaccess\.com|github\.com|npmjs\.com|schema\.org|sitemaps\.org|localhost)\b)[\w.-]+/ },
+  { name: 'URL', re: /https?:\/\/(?!(?:[\w-]+\.)*(?:example\.(?:com|org|net)|cloudflare\.com|cloudflareaccess\.com|line\.me|github\.com|npmjs\.com|schema\.org|sitemaps\.org|localhost)\b)[\w.-]+/ },
   // パッケージのスコープ（`@ryusenkei/`）以外の社名
   { name: '社名', re: /(?<!@)ryusenkei(?!\/)/i },
 ];
