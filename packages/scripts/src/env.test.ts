@@ -1,5 +1,9 @@
-import { describe, expect, it } from 'vitest';
-import { onlyArgs, parseOnly, pushPlan, selectTargets, splitAssignments, type Target } from './env.ts';
+import { execFileSync } from 'node:child_process';
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { findEnvFile, onlyArgs, parseOnly, pushPlan, selectTargets, splitAssignments, type Target } from './env.ts';
 
 describe('splitAssignments', () => {
   it('先頭の NAME=value だけを環境変数にする', () => {
@@ -52,5 +56,53 @@ describe('parseOnly・onlyArgs', () => {
 describe('selectTargets', () => {
   it('値の有無に関係なく組を出す', () => {
     expect(selectTargets({ A: ['github:secret'], B: [] }, 'github:')).toEqual([{ key: 'A', target: 'github:secret' }]);
+  });
+});
+
+describe('findEnvFile', () => {
+  const git = (cwd: string, ...args: string[]) => execFileSync('git', args, { cwd, stdio: 'ignore' });
+  let dir: string;
+  let main: string;
+  let worktree: string;
+
+  beforeAll(() => {
+    dir = realpathSync(mkdtempSync(join(tmpdir(), 'env-file-')));
+    main = join(dir, 'main');
+    worktree = join(dir, 'wt');
+    mkdirSync(main);
+    git(main, 'init', '-q');
+    git(main, '-c', 'user.name=t', '-c', 'user.email=t@example.com', 'commit', '-q', '--allow-empty', '-m', 'init');
+    git(main, 'worktree', 'add', '-q', worktree);
+  });
+  afterAll(() => rmSync(dir, { recursive: true, force: true }));
+  afterEach(() => {
+    rmSync(join(main, '.env'), { force: true });
+    rmSync(join(worktree, '.env'), { force: true });
+  });
+
+  it('本体のチェックアウトではそのルートの .env', () => {
+    writeFileSync(join(main, '.env'), 'A=1\n');
+    expect(findEnvFile(main)).toEqual({ path: join(main, '.env'), from: 'worktree' });
+  });
+
+  it('worktree に .env がなければ本体のチェックアウトの .env', () => {
+    writeFileSync(join(main, '.env'), 'A=1\n');
+    expect(findEnvFile(worktree)).toEqual({ path: join(main, '.env'), from: 'main' });
+  });
+
+  it('worktree の .env があればそれを優先する', () => {
+    writeFileSync(join(main, '.env'), 'A=1\n');
+    writeFileSync(join(worktree, '.env'), 'A=2\n');
+    expect(findEnvFile(worktree)).toEqual({ path: join(worktree, '.env'), from: 'worktree' });
+  });
+
+  it('どちらにもなければ undefined', () => {
+    expect(findEnvFile(worktree)).toBeUndefined();
+    expect(findEnvFile(main)).toBeUndefined();
+  });
+
+  it('git の外や bare のリポでは undefined', () => {
+    expect(findEnvFile(dir, () => null)).toBeUndefined();
+    expect(findEnvFile(worktree, () => join(dir, 'repo.git'))).toBeUndefined();
   });
 });
