@@ -64,6 +64,8 @@ A git worktree usually has no `.env`; only the main checkout does. The CLI looks
 
 It prints which file it read to stderr (`env  <path>（作業ツリー）` or `（本体のチェックアウト）`), never the values. It doesn't copy `.env` into the worktree.
 
+`findEnvFile(root)` returns the same choice (`{ path, from: 'worktree' | 'main' }`, or `undefined`) for repository scripts that read `.env` without `envCli`.
+
 The main checkout's `.env` may be newer or older than what the worktree's branch expects. Run `check` before deploying or pushing from a worktree.
 
 Targets:
@@ -75,6 +77,8 @@ Targets:
 | `wrangler:secret:<worker>` | `pnpm exec wrangler secret put <KEY> --name <worker>` |
 
 A key with an empty list stays local (for example, a token only used by `run`).
+
+`wrangler secret put` (in `push`) and `wrangler secret list` (in `check`) run with `CF_DEPLOY_TOKEN` from `.env` as `CLOUDFLARE_API_TOKEN`, and `CLOUDFLARE_ACCOUNT_ID` from `.env`, so they don't need `wrangler login`. Name another variable with `wranglerTokenVar`. Without the variable in `.env`, wrangler uses its login or the environment as before.
 
 ### Drift check (`check`)
 

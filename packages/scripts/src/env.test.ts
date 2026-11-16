@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
-import { findEnvFile, onlyArgs, parseOnly, pushPlan, selectTargets, splitAssignments, type Target } from './env.ts';
+import { findEnvFile, onlyArgs, parseOnly, pushPlan, selectTargets, splitAssignments, wranglerEnv, type Target } from './env.ts';
 
 describe('splitAssignments', () => {
   it('先頭の NAME=value だけを環境変数にする', () => {
@@ -104,5 +104,16 @@ describe('findEnvFile', () => {
   it('git の外や bare のリポでは undefined', () => {
     expect(findEnvFile(dir, () => null)).toBeUndefined();
     expect(findEnvFile(worktree, () => join(dir, 'repo.git'))).toBeUndefined();
+  });
+});
+
+describe('wranglerEnv', () => {
+  it('CF_DEPLOY_TOKEN を CLOUDFLARE_API_TOKEN、CLOUDFLARE_ACCOUNT_ID をそのまま渡す', () => {
+    expect(wranglerEnv({ CF_DEPLOY_TOKEN: 't', CLOUDFLARE_ACCOUNT_ID: 'a', OTHER: 'x' })).toEqual({ CLOUDFLARE_API_TOKEN: 't', CLOUDFLARE_ACCOUNT_ID: 'a' });
+  });
+
+  it('変数の名前を変えられ、.env にないものは足さない', () => {
+    expect(wranglerEnv({ CF_WORKER_TOKEN: 't' }, 'CF_WORKER_TOKEN')).toEqual({ CLOUDFLARE_API_TOKEN: 't' });
+    expect(wranglerEnv({ CF_DEPLOY_TOKEN: '' })).toEqual({});
   });
 });

@@ -1,4 +1,4 @@
-export { envCli, pushPlan, splitAssignments, type EnvConfig, type EnvContext, type EnvValues, type Target } from './env.ts';
+export { envCli, findEnvFile, pushPlan, splitAssignments, type EnvConfig, type EnvContext, type EnvFile, type EnvValues, type Target } from './env.ts';
 export { execCapture, execFiltered, execOutputSync, execSync, startProcess, stopProcess } from './exec.ts';
 export { currentRepo } from './repo.ts';
 export { backendConfigArgs, r2CredentialsOf, s3CredentialsEnv, type TerraformConfig } from './terraform.ts';

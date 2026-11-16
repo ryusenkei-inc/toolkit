@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { operatorRows, privacyPolicy } from '../../web/src/legal/index.ts';
-import { operator, retention, services } from './index.ts';
+import { copyright, copyrightHtml, operator, retention, services } from './index.ts';
 
 describe('company', () => {
   it('運営者は名称を「設立準備中」、代表者・所在地・電話番号を請求開示で出す', () => {
@@ -17,5 +17,12 @@ describe('company', () => {
       services: [{ ...services.cloudflareWorkers, items: ['お問い合わせの内容'] }],
     });
     expect(policy.articles.length).toBeGreaterThan(0);
+  });
+
+  it('著作権の表示は年なしの「© RYUSENKEI」で、既定は運営会社のサイトへのリンクあり', () => {
+    expect(copyright()).toEqual({ text: '© RYUSENKEI', prefix: '© ', name: 'RYUSENKEI', href: 'https://ryusenkei.co.jp/' });
+    expect(copyright({ link: false })).toEqual({ text: '© RYUSENKEI', prefix: '© ', name: 'RYUSENKEI' });
+    expect(copyrightHtml()).toBe('© <a href="https://ryusenkei.co.jp/">RYUSENKEI</a>');
+    expect(copyrightHtml({ link: false })).toBe('© RYUSENKEI');
   });
 });

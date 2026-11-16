@@ -21,7 +21,7 @@ pnpm add @ryusenkei/core @ryusenkei/web
 | `@ryusenkei/web/blob` | The `BlobStore` port and an in-memory store |
 | `@ryusenkei/web/session` | Site sessions: signed cookies, cached sign-in results, and the `SessionStore` port with an in-memory store |
 | `@ryusenkei/web/invite` | One-time invite codes that expire, stored as hashes: the `InviteStore` port and an in-memory store |
-| `@ryusenkei/web/webhook` | Signing and verifying webhooks and app-to-app requests (HMAC-SHA256) |
+| `@ryusenkei/web/webhook` | Signing and verifying webhooks and app-to-app requests (HMAC-SHA256), including the Standard Webhooks format |
 | `@ryusenkei/web/analytics` | Event recording and count ports, cookieless visitor keys, an in-memory store |
 | `@ryusenkei/web/analytics/client` | Sending events from the page with `sendBeacon` |
 | `@ryusenkei/web/seo` | Canonical URLs, meta tags, JSON-LD, sitemaps, `robots.txt` |
@@ -612,6 +612,39 @@ const bodyOnly: WebhookScheme = { message: ({ body }) => body, encoding: 'hex', 
 ```
 
 A `plain` header carries one signature (the first key's) and no timestamp, so there is no expiry check.
+
+### Standard Webhooks
+
+For webhooks between services, the [Standard Webhooks](https://www.standardwebhooks.com/) format, which other libraries and services can check: headers `webhook-id`, `webhook-timestamp` (seconds), and `webhook-signature` (`v1,<base64 HMAC-SHA256>`, space-separated), over `<id>.<timestamp>.<body>`, with a `whsec_<base64>` secret. The tests use the reference implementation's values, and signatures check both ways against it.
+
+```ts
+import { generateStandardWebhookSecret, standardWebhookHeaders, verifyStandardWebhookRequest } from '@ryusenkei/web/webhook';
+
+const secret = generateStandardWebhookSecret(); // whsec_…, stored on both sides
+
+// Sender: keep the same id when retrying
+const body = JSON.stringify(event);
+const headers = await standardWebhookHeaders(env.WEBHOOK_SECRET, { id: `msg_${event.id}`, body }, { init: { 'content-type': 'application/json' } });
+await fetch(url, { method: 'POST', headers, body });
+
+// Receiver
+const verified = await verifyStandardWebhookRequest(env.WEBHOOK_SECRET, request);
+if (!verified.ok) return new Response(null, { status: 401 }); // signature_missing | signature_expired | signature_mismatch
+// verified.value is { id, timestamp }: skip an id you've already handled
+```
+
+| Function | Does |
+| --- | --- |
+| `standardWebhookHeaders(secret, { id, body }, { now?, init? })` | `Headers` with the three headers added |
+| `standardWebhookSignature(secret, { id, body }, timestamp)` | The `webhook-signature` value for a timestamp in seconds |
+| `verifyStandardWebhook(secret, headers, body, { now?, toleranceSec? })` | Checks `Headers` or a plain object of headers against the raw body, as `Result<{ id, timestamp }, code>` |
+| `verifyStandardWebhookRequest(secret, request, { now?, toleranceSec? })` | Checks a `Request`. The body is read from a clone |
+| `generateStandardWebhookSecret()` | A new `whsec_` secret (24 random bytes) |
+
+- A timestamp more than 300 seconds (`toleranceSec`) away from now is `signature_expired`. Replays inside the window are not blocked; skip ids you've handled.
+- Key rotation: pass the secrets as an array, new key first. The signer adds one `v1,…` per key, and the verifier accepts any key matching any `v1` signature. Signatures of other versions are ignored.
+- A secret without `whsec_` is read as base64 too, as the reference implementation does. An empty secret or one that isn't base64 throws `ConfigError`.
+- `signWebhook` and the other functions above keep their format; switch a sender and its receivers together.
 
 ## Analytics (`@ryusenkei/web/analytics`)
 
