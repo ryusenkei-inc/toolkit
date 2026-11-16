@@ -34,6 +34,8 @@ export type EnvConfig = {
   terraform?: TerraformConfig;
   /** 配信した値の指紋を残す GitHub の variable（既定は `ENV_FINGERPRINTS`）。`check` が `.env` と比べる。`false` で残さない */
   fingerprints?: false | { variable?: string };
+  /** `push`、`check` で wrangler に `CLOUDFLARE_API_TOKEN` として渡す `.env` の変数（既定は `CF_DEPLOY_TOKEN`） */
+  wranglerTokenVar?: string;
 };
 
 const ASSIGN = /^[A-Z_][A-Z0-9_]*=/;
@@ -82,6 +84,16 @@ export function pushPlan(values: EnvValues, targets: Record<string, Target[]>, o
   }
   for (const key of empty) skips.push(`${key}: 値が未設定`);
   return { skips, items };
+}
+
+/**
+ * wrangler に渡す環境変数。`.env` の `tokenVar` を `CLOUDFLARE_API_TOKEN`、`CLOUDFLARE_ACCOUNT_ID` をそのまま渡す
+ * - `.env` にないものは足さない（`wrangler login` や、すでにある環境変数を使う）
+ */
+export function wranglerEnv(values: EnvValues, tokenVar = 'CF_DEPLOY_TOKEN'): EnvValues {
+  const token = values[tokenVar];
+  const accountId = values.CLOUDFLARE_ACCOUNT_ID;
+  return { ...(token && { CLOUDFLARE_API_TOKEN: token }), ...(accountId && { CLOUDFLARE_ACCOUNT_ID: accountId }) };
 }
 
 /** 読む `.env`。`from` は作業ツリーのルートのものか、本体のチェックアウトのものか */
@@ -148,6 +160,7 @@ export async function envCli(config: EnvConfig, argv = process.argv.slice(2)): P
     return execSync(cmd, rest);
   };
   const ctx: EnvContext = { root, values, run };
+  const wrangler = (): NodeJS.ProcessEnv => ({ ...process.env, ...wranglerEnv(values(), config.wranglerTokenVar) });
   const fingerprintVar = config.fingerprints === false ? undefined : (config.fingerprints?.variable ?? 'ENV_FINGERPRINTS');
 
   // `--only` の変数名が targets にあるか（打ち間違いで何も送らずに終わらないように）
@@ -175,7 +188,7 @@ export async function envCli(config: EnvConfig, argv = process.argv.slice(2)): P
     const pushed: { key: string; target: Target; value: string }[] = [];
     for (const item of plan.items) {
       console.log(`push  ${item.key} → ${item.target}`);
-      if (pushTo(root, repo, item.target, item.key, item.value) !== 0) failed = true;
+      if (pushTo(root, repo, item.target, item.key, item.value, wrangler) !== 0) failed = true;
       else if (item.target !== 'github:variable') pushed.push(item);
     }
     if (fingerprintVar && repo && pushed.length) recordFingerprints(root, repo, fingerprintVar, pushed);
@@ -199,7 +212,7 @@ export async function envCli(config: EnvConfig, argv = process.argv.slice(2)): P
     }
     const names = new Map<Target, Set<string> | null>();
     const namesOf = (target: Target): Set<string> | null => {
-      if (!names.has(target)) names.set(target, target === 'github:variable' ? new Set(variables.keys()) : remoteNames(root, repo, target));
+      if (!names.has(target)) names.set(target, target === 'github:variable' ? new Set(variables.keys()) : remoteNames(root, repo, target, wrangler));
       return names.get(target)!;
     };
     let drift = false;
@@ -265,10 +278,10 @@ export async function envCli(config: EnvConfig, argv = process.argv.slice(2)): P
 }
 
 // 値は標準入力で渡す（プロセスの引数に出さない）
-function pushTo(root: string, repo: string, target: Target, key: string, value: string): number {
+function pushTo(root: string, repo: string, target: Target, key: string, value: string, wranglerEnvOf: () => NodeJS.ProcessEnv): number {
   const options: SpawnSyncOptions = { input: value, stdio: ['pipe', 'inherit', 'inherit'], cwd: root };
   if (target === 'github:variable' || target === 'github:secret') return execSync('gh', [target === 'github:variable' ? 'variable' : 'secret', 'set', key, '--repo', repo], options);
-  return execSync('pnpm', ['exec', 'wrangler', 'secret', 'put', key, '--name', target.slice('wrangler:secret:'.length)], options);
+  return execSync('pnpm', ['exec', 'wrangler', 'secret', 'put', key, '--name', target.slice('wrangler:secret:'.length)], { ...options, env: wranglerEnvOf() });
 }
 
 // GitHub のリポ。`optional` は GitHub に送らないとき（指紋の記録だけに使う）で、失敗は警告にとどめる
@@ -290,11 +303,11 @@ function githubVariables(root: string, repo: string): Map<string, string> | null
 }
 
 // 秘密値の名前の一覧（値は読めない）。失敗は null
-function remoteNames(root: string, repo: string, target: Target): Set<string> | null {
+function remoteNames(root: string, repo: string, target: Target, wranglerEnvOf: () => NodeJS.ProcessEnv): Set<string> | null {
   const out =
     target === 'github:secret'
       ? execOutputSync('gh', ['secret', 'list', '--repo', repo, '--json', 'name'], { cwd: root })
-      : execOutputSync('pnpm', ['exec', 'wrangler', 'secret', 'list', '--name', target.slice('wrangler:secret:'.length), '--format', 'json'], { cwd: root });
+      : execOutputSync('pnpm', ['exec', 'wrangler', 'secret', 'list', '--name', target.slice('wrangler:secret:'.length), '--format', 'json'], { cwd: root, env: wranglerEnvOf() });
   if (out === null) return null;
   try {
     return new Set((JSON.parse(out.slice(Math.max(0, out.indexOf('['))) || '[]') as { name: string }[]).map((s) => s.name));

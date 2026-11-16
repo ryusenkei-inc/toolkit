@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.13.0
+
+Webhook signing in the Standard Webhooks format. Existing code works unchanged.
+
+### Added
+
+- `@ryusenkei/web/webhook`: `standardWebhookHeaders`, `standardWebhookSignature`, `verifyStandardWebhook`, `verifyStandardWebhookRequest`, `generateStandardWebhookSecret`, and `STANDARD_WEBHOOK_HEADERS`. Headers `webhook-id`, `webhook-timestamp`, and `webhook-signature` (`v1,<base64>`), signed over `<id>.<timestamp>.<body>` with a `whsec_` secret, a 300-second tolerance, and several secrets for key rotation. Verification returns the `id` and `timestamp`. Signatures match the reference implementation.
+- `signWebhook`, `verifyWebhook`, `webhookHeaders`, and `verifyWebhookRequest` keep their format.
+
 ## 0.12.0
 
 Parts for sites whose members sign in with an ID token kept by another service: passing the token on, site sessions, and invite codes. Existing code works unchanged.

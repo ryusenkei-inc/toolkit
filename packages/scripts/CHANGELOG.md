@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.6.0
+
+### Added
+
+- `findEnvFile(root)` and the `EnvFile` type are exported: the `.env` that `envCli` reads (the worktree's, then the main checkout's).
+- `EnvConfig.wranglerTokenVar`: the `.env` variable passed to wrangler as `CLOUDFLARE_API_TOKEN` (default `CF_DEPLOY_TOKEN`).
+
+### Changed
+
+- `envCli`: `push` to `wrangler:secret:<worker>` and `check` of those targets run wrangler with `CF_DEPLOY_TOKEN` from `.env` as `CLOUDFLARE_API_TOKEN`, and with `CLOUDFLARE_ACCOUNT_ID` from `.env`. Without them in `.env`, wrangler uses its login or the environment as before.
+
 ## 0.5.1
 
 ### Fixed

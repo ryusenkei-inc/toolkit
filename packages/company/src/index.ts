@@ -1,4 +1,4 @@
-// RYUSENKEI の会社の値。@ryusenkei/web の `legal` と `form/server` に渡す
+// RYUSENKEI の会社の値。@ryusenkei/web の `legal` と `form/server` に渡すほか、サイトの著作権の表示を出す
 // 個人名とインフラの値（アカウントの ID、ゾーン）は入れない。代表者などは「請求があれば開示」にする
 import type { ExternalService, Operator, Retention } from '@ryusenkei/web/legal';
 
@@ -44,3 +44,38 @@ export const contact = {
   fromName: 'RYUSENKEI',
   to: { email: CONTACT_EMAIL, name: 'RYUSENKEI' },
 } as const;
+
+/** 著作権の表示（各製品のサイトで同じ表記にする） */
+export type Copyright = {
+  /** 表示の全体（`© RYUSENKEI`） */
+  text: string;
+  /** 記号と空白（`© `） */
+  prefix: string;
+  /** 名前（`RYUSENKEI`） */
+  name: string;
+  /** 運営会社のサイトの URL。リンクなしのときはない */
+  href?: string;
+};
+
+const COPYRIGHT_PREFIX = '© ';
+const escapeHtml = (s: string): string => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+
+/**
+ * 著作権の表示。年は入れない
+ * - `link`（既定は `true`）: 名前を運営会社のサイトへのリンクにするか
+ * - Astro や React では `prefix`、`name`、`href` から組み立てる
+ */
+export function copyright(options: { link?: boolean } = {}): Copyright {
+  const base = { text: `${COPYRIGHT_PREFIX}${operator.name}`, prefix: COPYRIGHT_PREFIX, name: operator.name };
+  return options.link === false ? base : { ...base, href: new URL(operator.url).href };
+}
+
+/**
+ * 著作権の表示の HTML（`© <a href="https://ryusenkei.co.jp/">RYUSENKEI</a>`）
+ * - `link: false` ならリンクなしの文字だけ
+ * - `rel` などリンクの属性を足すときは `copyright()` から組み立てる
+ */
+export function copyrightHtml(options: { link?: boolean } = {}): string {
+  const c = copyright(options);
+  return c.href ? `${escapeHtml(c.prefix)}<a href="${escapeHtml(c.href)}">${escapeHtml(c.name)}</a>` : escapeHtml(c.text);
+}

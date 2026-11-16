@@ -11,7 +11,7 @@ Shared packages for RYUSENKEI repositories, published to npm under `@ryusenkei`.
 | [`@ryusenkei/scripts`](packages/scripts) | Shared scripts: child processes, the `.env` CLI, the deploy lock and post-deploy checks, Search Console, the npm license check, and GitHub repository settings |
 | [`@ryusenkei/core`](packages/core) | Runtime-independent base: `Result`, infrastructure errors and their classification, structured logging, tracing, error reporting, CSV |
 | [`@ryusenkei/web`](packages/web) | Runtime libraries for web products on Cloudflare Workers and Vercel: HTTP failure responses, forms, site sessions, invite codes, legal documents, mail, webhook signing, analytics, SEO, and the Cloudflare, Turnstile, and Access integrations (subpath exports) |
-| [`@ryusenkei/company`](packages/company) | RYUSENKEI's company values (operator, legal and contact defaults) to pass to `@ryusenkei/web` |
+| [`@ryusenkei/company`](packages/company) | RYUSENKEI's company values (operator, legal and contact defaults) to pass to `@ryusenkei/web`, and the sites' copyright notice |
 
 `@ryusenkei/core` 0.3.0 and `@ryusenkei/web` replace `core` 0.2.x and the deprecated `form`, `legal`, `mail`, `adapter-cloudflare`, `adapter-turnstile`, `adapter-access`, `rate-limit`, `bot-check`, `blob`, and `auth` packages.
 

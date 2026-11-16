@@ -21,7 +21,8 @@
     "./company.json": "./dist/company.json"
   },
   "files": [
-    "dist"
+    "dist",
+    "CHANGELOG.md"
   ],
   "publishConfig": {
     "access": "public",

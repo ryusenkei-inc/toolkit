@@ -1,6 +1,7 @@
 // Webhook とアプリどうしの要求の署名と検証（HMAC-SHA256、Web Crypto だけで動く）
 // - 仕組み（時刻の許容、鍵の入れ替え、本文の読み方）はここ、ヘッダーの名前と署名の形式は使う側の値
 // - 既定の形式 `requestScheme` は、時刻・メソッド・パスとクエリ・主体・本文の SHA-256 を署名する
+// - Standard Webhooks の仕様の形は `standard.ts`
 import { ConfigError, err, ok, type Result } from '@ryusenkei/core';
 import { decodeBytes as decode, encodeBytes as encode, type ByteEncoding } from '../internal/encoding.ts';
 
@@ -193,3 +194,17 @@ export async function verifyWebhookRequest(secret: WebhookSecrets | null | undef
   const subject = options.subjectHeader ? request.headers.get(options.subjectHeader) : null;
   return verifyWebhook(secret, header, { method: request.method, url: request.url, body, subject }, options);
 }
+
+export {
+  generateStandardWebhookSecret,
+  STANDARD_WEBHOOK_HEADERS,
+  standardWebhookHeaders,
+  standardWebhookSignature,
+  verifyStandardWebhook,
+  verifyStandardWebhookRequest,
+  type StandardWebhookOptions,
+  type StandardWebhookParts,
+  type StandardWebhookSecrets,
+  type StandardWebhookVerified,
+  type VerifyStandardWebhookOptions,
+} from './standard.ts';
