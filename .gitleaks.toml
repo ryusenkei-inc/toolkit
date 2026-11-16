@@ -9,3 +9,7 @@ description = "公開してよい雛形（秘密値ではない）"
 paths = [
   '''.*\.example$''',
 ]
+# Standard Webhooks の参照の実装の試験の値（公開されている例）
+regexes = [
+  '''MfKQ9r8GKYqrTwjUPD8ILPZIo2LaLaSw''',
+]
