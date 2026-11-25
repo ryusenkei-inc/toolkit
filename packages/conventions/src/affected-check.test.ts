@@ -19,6 +19,6 @@ describe('spawnTarget', () => {
 
   it('leaves other commands and a missing npm_execpath alone', () => {
     expect(spawnTarget('git', ['status'], '/x/pnpm.cjs')).toEqual({ file: 'git', argv: ['status'], shell: false });
-    expect(spawnTarget('pnpm', ['test'], undefined)).toEqual({ file: 'pnpm', argv: ['test'], shell: false });
+    expect(spawnTarget('pnpm', ['test'], '')).toEqual({ file: 'pnpm', argv: ['test'], shell: false });
   });
 });
