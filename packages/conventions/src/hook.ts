@@ -8,6 +8,7 @@ import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'n
 import { homedir, tmpdir } from 'node:os';
 import { isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { readCheckRecord } from './check-record.ts';
 import { denyReason, type Checks, type ToolUse } from './policy.ts';
 
 type Input = ToolUse & { hook_event_name: string; stop_hook_active?: boolean };
@@ -18,7 +19,7 @@ const root = process.env.CLAUDE_PROJECT_DIR ?? input.cwd ?? process.cwd();
 const shell = process.platform === 'win32';
 
 if (input.hook_event_name === 'PreToolUse') {
-  const reason = denyReason(input, { root, repoRoot, resolveDir, titleIssues, readFile, currentBranch, prHead, prBase, hasPrWorkflow, prChecks });
+  const reason = denyReason(input, { root, repoRoot, resolveDir, titleIssues, readFile, currentBranch, prHead, prBase, hasPrWorkflow, prChecks, localCheck });
   if (reason) {
     process.stderr.write(`${reason}\n`);
     process.exit(2);
@@ -76,6 +77,12 @@ function prHead(pr: string | undefined, cwd: string | undefined): string | undef
 function prBase(pr: string | undefined, cwd: string | undefined): string | undefined {
   const r = spawnSync('gh', ['pr', 'view', ...(pr ? [pr] : []), '--json', 'baseRefName', '--jq', '.baseRefName'], { cwd: cwd ?? root, encoding: 'utf8' });
   return (r.status === 0 && r.stdout.trim()) || undefined;
+}
+
+function localCheck(pr: string | undefined, cwd: string | undefined): string | undefined {
+  const sha = spawnSync('gh', ['pr', 'view', ...(pr ? [pr] : []), '--json', 'headRefOid', '--jq', '.headRefOid'], { cwd: cwd ?? root, encoding: 'utf8' }).stdout?.trim();
+  const commonDir = spawnSync('git', ['rev-parse', '--path-format=absolute', '--git-common-dir'], { cwd: cwd ?? root, encoding: 'utf8' }).stdout?.trim();
+  return sha && commonDir ? readCheckRecord(commonDir, sha) : undefined;
 }
 
 // GitHub で無効にしたワークフローはチェックを出さない → 有効なものだけを数える

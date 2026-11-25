@@ -10,6 +10,10 @@ on:
         description: 標準の検査の後に実行するコマンド（リポ独自の検査）
         type: string
         default: ''
+      affected:
+        description: 型検査・テスト・prose-lint の代わりに、PR の base に向けた影響の範囲の検査（`pnpm check --base origin/<base>`、@ryusenkei/conventions の runAffectedCheck）を実行
+        type: boolean
+        default: false
       terraform:
         description: fmt と validate で検査する Terraform のディレクトリ（空白区切り。Terraform は呼ぶ側の mise.toml）
         type: string
@@ -20,6 +24,8 @@ permissions:
 
 jobs:
   ci:
+    # draft の PR では実行しない（ready にしたときの ready_for_review で実行、無料枠の節約）
+    if: github.event_name != 'pull_request' || !github.event.pull_request.draft
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -28,13 +34,30 @@ jobs:
       # Node・Terraform = 呼ぶ側の mise.toml
       - uses: jdx/mise-action@v4
       - uses: pnpm/action-setup@v6
+      # pnpm の store を lockfile ごとに保存して install を短縮
+      - name: pnpm store
+        id: pnpm-store
+        run: echo "dir=$(pnpm store path)" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@v6
+        with:
+          path: ${{ steps.pnpm-store.outputs.dir }}
+          key: pnpm-store-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: pnpm-store-${{ runner.os }}-
       - name: Install
         run: pnpm install --frozen-lockfile
+      - name: Check (affected)
+        if: inputs.affected
+        env:
+          BASE: ${{ github.base_ref || 'main' }}
+        run: pnpm check --base "origin/$BASE"
       - name: Typecheck
+        if: ${{ !inputs.affected }}
         run: pnpm typecheck
       - name: Test
+        if: ${{ !inputs.affected }}
         run: pnpm test
       - name: Prose lint
+        if: ${{ !inputs.affected }}
         run: pnpm lint:prose
       # backend なしで検査（state と認証は要らない）
       - name: Terraform

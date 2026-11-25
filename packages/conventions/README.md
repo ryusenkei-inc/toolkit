@@ -10,6 +10,7 @@ Shared conventions for RYUSENKEI monorepos created from monorepo-template. Rules
 | `files/` | Master copies of the shared files, synced into each repository |
 | `ryusenkei-conventions` | CLI: `sync` writes the shared files, `check` reports drift |
 | `TEST_EXCLUDE` | Patterns to add to Vitest's default `exclude` |
+| `runAffectedCheck` | The pre-push `pnpm check`: type checks and tests only what the change affects |
 
 ## Install
 
@@ -57,7 +58,7 @@ The PreToolUse hook blocks the call and tells Claude why, so Claude can fix it a
 | PR title = squash commit message | Checks `gh pr create` / `gh pr edit` titles with prose-lint's commit rules |
 | No AI signature | `attribution` is empty, and the hook blocks PR bodies with an AI signature |
 | Squash merge | Blocks `gh pr merge --rebase` and `--merge`, also for a `dev/*` → `main` PR with the epic flow |
-| Merge only after CI passes | Blocks `gh pr merge` unless every check of the PR has passed (`gh pr checks`). Pending, failed, missing, or unreadable checks are blocked, also with `--auto`. A PR may have no checks only when the repository has no enabled workflow that runs on `pull_request` (workflows disabled on GitHub with `gh workflow disable` don't count; the pre-push `pnpm check` is the gate), or with the epic flow when it targets `dev/*`. Right after a push, the checks may not be registered yet, so the hook points to `gh pr checks --watch` |
+| Merge only after CI passes | Blocks `gh pr merge` unless every check of the PR has passed (`gh pr checks`), or the PR's head commit passed the local `pnpm check` against the PR's base (see [Pre-push check](#pre-push-check)). Pending, failed, missing, or unreadable checks are blocked, also with `--auto`. A PR may have no checks only when the repository has no enabled workflow that runs on `pull_request` (workflows disabled on GitHub with `gh workflow disable` don't count; the pre-push `pnpm check` is the gate), or with the epic flow when it targets `dev/*`. Right after a push, the checks may not be registered yet, so the hook points to `gh pr checks --watch` |
 | Epic flow (opt-in) | See [Epic flow](#epic-flow) |
 | Do not edit `node_modules` | Blocks Edit and Write under `node_modules` |
 | Secrets | `permissions.deny` blocks reading `.env` and `.dev.vars` with Claude's file tools (not Bash) |
@@ -108,7 +109,7 @@ Opt in per repository in the root `package.json`:
 
 When the `rules.md` import is present, `sync` adds the missing ones right after it.
 
-`check` also reports a missing or incomplete root Vitest config when the root `package.json` depends on `vitest` (see [Vitest](#vitest)), and a root `package.json` without a `check` script, since the pre-push hook runs `pnpm check` and pushes unchecked without one. Add it by hand (for example `pnpm typecheck && pnpm test && pnpm lint:prose && ryusenkei-conventions check`).
+`check` also reports a missing or incomplete root Vitest config when the root `package.json` depends on `vitest` (see [Vitest](#vitest)), and a root `package.json` without a `check` script, since the pre-push hook runs `pnpm check` and pushes unchecked without one. Add it by hand, as `node scripts/check.ts` with [`runAffectedCheck`](#pre-push-check).
 
 Dependabot runs monthly with `rebase-strategy: disabled` to save GitHub Actions minutes, so rebase a Dependabot PR (`@dependabot rebase`) before merging it. The `cooldown` excludes `@ryusenkei/*`. To pick up a new version sooner, run `pnpm update "@ryusenkei/*"`. After an update, `check` fails until `sync` is run.
 
@@ -136,6 +137,40 @@ export default defineConfig({
 `check` reports a root `vitest.config.*` that neither uses `TEST_EXCLUDE` nor lists every pattern, and a repository that depends on `vitest` without one. It can't fix this by itself, since each repository's config differs. The shared `.gitignore` ignores `.terraform/` as well (`.terraform.lock.hcl` stays tracked).
 
 `ryusenkei-conventions` exits with 0 when nothing drifts, 1 when something does, and 2 for a usage error; `--help` exits with 0.
+
+## Pre-push check
+
+`runAffectedCheck` runs the type checks and tests a change affects, so a push doesn't wait for the whole repository. Each repository passes its own fast checks:
+
+```ts
+// scripts/check.ts (package.json: "check": "node scripts/check.ts")
+import { runAffectedCheck } from '@ryusenkei/conventions';
+
+const results = await runAffectedCheck({
+  steps: () => [
+    { name: 'prose-lint', command: 'pnpm', args: ['exec', 'prose-lint'] },
+    { name: 'conventions', command: 'pnpm', args: ['exec', 'ryusenkei-conventions', 'check'] },
+    { name: 'deps', command: 'node', args: ['scripts/deps.ts'] },
+  ],
+});
+process.exitCode = results.every((r) => r.ok) ? 0 : 1;
+```
+
+| Scope | What runs |
+| --- | --- |
+| Base | The merge base with the nearest of `origin/main` and `origin/dev/*` (fewest commits to `HEAD`), excluding the branch's own remote. A sub-issue branch is checked against its epic's `dev/*`, and a `dev/*` branch against `main` |
+| Changes | Committed, uncommitted and untracked files since the base. Markdown doesn't count |
+| Type check | `typecheck` of the changed packages and their dependents (`pnpm -r --filter ...<name>`), and the root `tsc` when a `.ts` file outside the packages changed. Packages that import the root `scripts/` count as changed with it |
+| Tests | `vitest run --changed <base>` (tests that import a changed file) |
+| Everything | `pnpm typecheck` and all tests, with `--all`, without a base, or when a root config changed (`package.json`, `pnpm-workspace.yaml`, `tsconfig*.json`, `vitest.config.*`, `mise.toml`, `.npmrc`, or `pnpm-lock.yaml` without a package's `package.json`) |
+
+- The type check and the tests run one after the other, and `steps` run beside them. This keeps the peak memory to one heavy process tree, so parallel pushes from other worktrees fit (`concurrency` sets how many packages `tsc` checks at once, default 2).
+- `--base <ref>` sets the base. `globalFiles` adds files that mean everything, and `testArgs` adds Vitest arguments such as reporters.
+- Run it through `pnpm` (`pnpm check`). It starts `pnpm` from `npm_execpath`.
+
+The whole repository is checked with `pnpm check --all` locally before deploying.
+
+When `pnpm check` passes with a clean working tree, it records the commit and the base it checked in the common git directory (`ryusenkei-check/<sha>`). `gh pr merge` accepts a PR without passing checks when its head commit has a record for the PR's base (`origin/<base>`) or for `--all`. So when CI doesn't run (the free minutes ran out, or the workflow is disabled), run `pnpm check --base origin/main` on the PR's head and merge. A push of a `dev/*` branch is checked against `origin/main`, so it records that already.
 
 ## Dependency direction
 
@@ -180,7 +215,7 @@ name: CI
 on:
   pull_request:
     branches: [main]
-    types: [opened, synchronize, reopened]
+    types: [opened, synchronize, reopened, ready_for_review]
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
@@ -193,6 +228,9 @@ jobs:
       checks: |
         pnpm lint:deps
 ```
+
+- The job is skipped while the PR is a draft and runs when it is marked ready (`ready_for_review`), to save the free minutes.
+- `affected: true` runs `pnpm check --base origin/<base>` ([Pre-push check](#pre-push-check)) instead of the full type check, tests and prose-lint. Use it where the full check takes too long for the free minutes; the full check then runs locally before deploying.
 
 Go, with releases on `v*` tags:
 

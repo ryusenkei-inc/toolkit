@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { denyReason, type Checks, type Context } from './policy.ts';
 
 // リポ: `/repo`（epic のフローは `epic` で有効化）と `/other`（epic のフローなし）
-const context = (o: { branch?: string; checks?: Checks; epic?: boolean; base?: string; workflow?: boolean } = {}): Context => ({
+const context = (o: { branch?: string; checks?: Checks; epic?: boolean; base?: string; workflow?: boolean; local?: string } = {}): Context => ({
   root: '/repo',
   repoRoot: (cwd) => ['/repo', '/other'].find((r) => cwd === r || cwd?.startsWith(`${r}/`)),
   resolveDir: (base, dir) => posix.resolve(base ?? '/repo', dir),
@@ -18,6 +18,7 @@ const context = (o: { branch?: string; checks?: Checks; epic?: boolean; base?: s
   prBase: () => o.base ?? 'main',
   hasPrWorkflow: () => o.workflow ?? true,
   prChecks: () => o.checks ?? 'pass',
+  localCheck: () => o.local,
 });
 const ctx = context();
 const bash = (command: string, c = ctx) => denyReason({ tool_name: 'Bash', tool_input: { command }, cwd: '/repo' }, c);
@@ -110,6 +111,11 @@ describe('PR', () => {
     expect(bash('gh pr merge 3 --squash', context({ checks: 'none', workflow: false }))).toBeUndefined();
     expect(bash('gh pr merge 3 --squash', context({ checks: 'pending', workflow: false }))).toMatch('実行中');
     expect(bash('gh pr merge 3 --squash', context({ checks: 'none' }))).toMatch('gh pr checks --watch');
+  });
+  it('CI が通っていなくても、base に向けた手元の検査の記録があれば許可', () => {
+    expect(bash('gh pr merge 3 --squash', context({ checks: 'fail', local: 'origin/main' }))).toBeUndefined();
+    expect(bash('gh pr merge 3 --squash', context({ checks: 'none', local: 'all' }))).toBeUndefined();
+    expect(bash('gh pr merge 3 --squash', context({ checks: 'pending', local: 'origin/dev/12-search' }))).toMatch('pnpm check --base origin/main');
   });
   it('マージの対象の PR を判定に渡す', () => {
     const seen: (string | undefined)[] = [];

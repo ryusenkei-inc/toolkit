@@ -57,9 +57,12 @@
 
 - add は変更・追加したファイルをパスで指定する。一括の add はフックで止まる
 - push の前に `pnpm check` を通す。pre-push で強制される（`check` の script はどのリポにも置く）
+  - `pnpm check` は PR の向き先（`origin/main` か epic の `origin/dev/*`）からの変更の影響の範囲だけを検査する。全体の検査の `pnpm check --all` はデプロイの前に手元で回す
 - PR の本文は背景、変更、検証の順に書く
 - 前の PR のブランチから PR を重ねた場合は、親のマージの後にスキル `stacked-pr` の手順で整理する
 - マージは squash で、CI の全チェックの成功を確かめてから行う（フックで強制）
+  - `main` 行きの PR は draft で作り、マージの前に ready にする。CI は ready の PR だけで回る（GitHub Actions の無料枠の節約）
+  - CI が走らない・止まったとき（無料枠の超過など）は、PR の head のコミットで手元の `pnpm check --base origin/<base>` を通せばマージできる
 - epic のフロー（有効にしたリポだけ）
   - epic ごとに `dev/<issue の番号>-<内容>` を作り、sub-issue の PR は dev のブランチに向ける
   - dev のブランチへのマージに CI は使わず、pre-push の `pnpm check` を関門にする。チェックがある場合は成功が必要
