@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.10.1
+
+- `runAffectedCheck` failed every step on Windows when `npm_execpath` pointed at a standalone `pnpm.exe` (it was started with `node`). It now starts `.js`, `.cjs`, and `.mjs` with `node`, and `.exe` directly.
+
 ## 0.10.0
 
 - `runAffectedCheck`: the pre-push `pnpm check` from `scripts/check.ts`. It type checks the changed packages and their dependents and runs the tests that import a changed file, against the nearest of `origin/main` and `origin/dev/*`; `--all` checks everything. The type check and the tests run one after the other to keep the peak memory low. See [Pre-push check](README.md#pre-push-check).
