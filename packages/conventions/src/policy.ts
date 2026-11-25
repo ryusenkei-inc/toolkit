@@ -3,6 +3,7 @@
 // - 拒否の理由は Claude に返却 → Claude が修正して再実行
 // - 対象のリポ・ブランチはコマンドから解決: `cd`・`git -C` の後はその git のルート、ブランチの切り替えの後はその先のブランチ
 import { isAbsolute, join } from 'node:path';
+import { coversBase } from './check-record.ts';
 import { commands, option } from './shell.ts';
 
 /** PreToolUse の入力（使用する項目のみ） */
@@ -33,6 +34,8 @@ export type Context = {
   hasPrWorkflow: (cwd: string | undefined) => boolean;
   /** PR のチェックの集計（`pr` の省略時は現在のブランチの PR） */
   prChecks: (pr: string | undefined, cwd: string | undefined) => Checks;
+  /** PR の head のコミットで手元の `pnpm check` が通った範囲（check-record.ts、記録がなければ `undefined`） */
+  localCheck: (pr: string | undefined, cwd: string | undefined) => string | undefined;
 };
 
 const TYPES = ['build', 'chore', 'ci', 'docs', 'feat', 'fix', 'perf', 'refactor', 'revert', 'style', 'test'];
@@ -249,6 +252,7 @@ function prReasons(sub: string | undefined, args: string[], st: State, ctx: Cont
 // `--auto` も対象（必須のチェックがないリポでは即時にマージされる）
 // - マージは常に squash（org のリポの設定が squash だけを許可。epic のフローの dev/* から main へも同じ）
 // - epic のフローの dev/* への PR: チェックなしを許可（CI を実行せず pre-push の `pnpm check` が関門）
+// - CI が通っていなくても、PR の head で base に向けた手元の `pnpm check` が通っていれば許可（無料枠の超過などで CI が走らないときに詰まらないため）
 function mergeReasons(args: string[], st: State, ctx: Context): string[] {
   const { cwd } = st;
   if (args.some((a) => a === '--rebase' || a === '-r')) return ['rebase でのマージは禁止（`--squash`）'];
@@ -258,11 +262,10 @@ function mergeReasons(args: string[], st: State, ctx: Context): string[] {
   if (checks === 'pass') return [];
   // PR で動く有効なワークフローがないリポ: CI の代わりに pre-push の `pnpm check` が関門
   if (checks === 'none' && !ctx.hasPrWorkflow(cwd)) return [];
-  if (checks === 'none' && epicFlow(st, ctx)) {
-    const base = ctx.prBase(pr, cwd);
-    if (base !== undefined && DEV_BRANCH.test(base)) return [];
-  }
-  return [CHECKS_REASON[checks]];
+  const base = ctx.prBase(pr, cwd);
+  if (checks === 'none' && epicFlow(st, ctx) && base !== undefined && DEV_BRANCH.test(base)) return [];
+  if (base !== undefined && coversBase(ctx.localCheck(pr, cwd), base)) return [];
+  return [`${CHECKS_REASON[checks]}。CI が走らない・止まったときは、PR の head のコミットで手元の \`pnpm check --base origin/${base ?? 'main'}\` を通すとマージできる`];
 }
 
 // epic のフロー: main への PR は dev/* から、それ以外のブランチの PR は dev/* へ
