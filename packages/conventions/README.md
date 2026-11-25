@@ -166,7 +166,7 @@ process.exitCode = results.every((r) => r.ok) ? 0 : 1;
 
 - The type check and the tests run one after the other, and `steps` run beside them. This keeps the peak memory to one heavy process tree, so parallel pushes from other worktrees fit (`concurrency` sets how many packages `tsc` checks at once, default 2).
 - `--base <ref>` sets the base. `globalFiles` adds files that mean everything, and `testArgs` adds Vitest arguments such as reporters.
-- Run it through `pnpm` (`pnpm check`). It starts `pnpm` from `npm_execpath`.
+- Run it through `pnpm` (`pnpm check`). It starts `pnpm` from `npm_execpath` (`.js` with `node`, `.exe` directly).
 
 The whole repository is checked with `pnpm check --all` locally before deploying.
 

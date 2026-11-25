@@ -85,12 +85,20 @@ function planOf(options: AffectedCheckOptions, argv: string[]): { plan: string[]
 
 const seconds = (from: number): string => `${((Date.now() - from) / 1000).toFixed(1)}s`;
 
-// pnpm は実行中の pnpm（npm_execpath）を node で起動（Windows の pnpm.cmd をシェルなしで起動できないため）
+/**
+ * 起動するファイルと引数（pnpm は実行中の pnpm の npm_execpath から）
+ * - .js・.cjs・.mjs は node で起動、.exe は直接、.cmd・.bat はシェル経由（単体の pnpm.exe を指す場合があるため）
+ */
+export function spawnTarget(command: string, args: string[], execpath = process.env.npm_execpath): { file: string; argv: string[]; shell: boolean } {
+  if (command !== 'pnpm' || !execpath) return { file: command, argv: args, shell: false };
+  if (/\.[cm]?js$/i.test(execpath)) return { file: process.execPath, argv: [execpath, ...args], shell: false };
+  return { file: execpath, argv: args, shell: /\.(cmd|bat)$/i.test(execpath) };
+}
+
 function capture(command: string, args: string[]): Promise<{ status: number; output: string }> {
-  const pnpm = command === 'pnpm' ? process.env.npm_execpath : undefined;
-  const [file, argv] = pnpm ? [process.execPath, [pnpm, ...args]] : [command, args];
+  const { file, argv, shell } = spawnTarget(command, args);
   return new Promise((resolve) => {
-    const child = spawn(file, argv, { stdio: ['ignore', 'pipe', 'pipe'] });
+    const child = spawn(file, argv, { stdio: ['ignore', 'pipe', 'pipe'], shell });
     let output = '';
     child.stdout.on('data', (chunk: Buffer) => (output += chunk.toString()));
     child.stderr.on('data', (chunk: Buffer) => (output += chunk.toString()));
