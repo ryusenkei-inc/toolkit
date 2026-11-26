@@ -4,6 +4,7 @@
 //   行の長さ・行末コメントの位置は例が長い → 対象外
 export const EXAMPLES: Record<string, [bad: string, good: string]> = {
   'format/period': ['キャッシュを削除する。', 'キャッシュを削除する'],
+  'format/period-required': ['キャッシュを削除する', 'キャッシュを削除する。'],
   'format/paren-width': ['上限 (D1) の行数', '上限（D1）の行数'],
   'format/colon': ['期限：5分', '期限: 5分'],
   'format/spacing': ['D1の上限は 1回', 'D1 の上限は1回'],

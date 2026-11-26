@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.10.3
+
+- Depends on `@ryusenkei/prose-lint` 0.3. The PR title check in the hook reads the repository's `prose-lint.json` with this copy, and 0.2 rejects the new `overrides` key.
+
 ## 0.10.2
 
 - `minimumReleaseAgeExclude` in `pnpm-workspace.yaml` and the Dependabot `cooldown` and own-package group also cover `@tunasand/*`, the SDK of the product. `check` asks to update `minimumReleaseAgeExclude` until `sync` is run.

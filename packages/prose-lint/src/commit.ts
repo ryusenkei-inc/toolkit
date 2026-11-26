@@ -2,6 +2,7 @@
 //   - 書式: Conventional Commits・subject は日本語・1行のみ（body なし）・AI の署名なし
 //   - subject の文は書式・表記の規則で判定
 //   - `type(scope)!: ` は英語の決まった書式 → 対象外
+//   - 既定で無効の規則（句点あり）は適用しない
 //   - `#` で始まる行・`--verbose` の差分（切り取り線以降）は git が除去 → 対象外
 import { JA, type Issue } from './rule.ts';
 import { textIssues, type Options } from './text.ts';
@@ -18,7 +19,8 @@ const AI_NOTE = /generated (with|by)|🤖/i;
 
 export const COMMIT_RULE_IDS = ['commit/format', 'commit/subject-ja', 'commit/body', 'commit/trailer'];
 
-export function commitMessageIssues(message: string, options: Options = {}): { line: number; text: string; issues: Issue[] }[] {
+export function commitMessageIssues(message: string, base: Options = {}): { line: number; text: string; issues: Issue[] }[] {
+  const options: Options = { ...base, enabled: new Set() };
   const disabled = options.disabled ?? new Set<string>();
   const on = (id: string) => !disabled.has(id);
   const out: { line: number; text: string; issues: Issue[] }[] = [];

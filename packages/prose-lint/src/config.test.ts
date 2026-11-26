@@ -37,6 +37,35 @@ describe('設定', () => {
     expect(() => loadConfig(repo({ 'prose-lint.json': { rules: { 'style/hedge': false } } }))).toThrow('未知の規則 style/hedge');
   });
 
+  it('上書きは一致するファイルだけに順に適用', () => {
+    const overrides = [
+      { files: ['docs/**/*.md'], rules: { 'format/period': false, 'format/period-required': true } },
+      { files: ['docs/brand/**'], rules: { 'format/period': true, 'format/period-required': false } },
+    ];
+    const { config } = loadConfig(repo({ 'prose-lint.json': { rules: { 'format/length': false }, overrides } }));
+    const of = (file?: string) => {
+      const { disabled, enabled } = textOptions(config, file);
+      return { disabled: [...disabled].sort(), enabled: [...enabled] };
+    };
+    const base = { disabled: ['format/length'], enabled: [] };
+    expect(of('docs/a.md')).toEqual({ disabled: ['format/length', 'format/period'], enabled: ['format/period-required'] });
+    expect(of('docs/guide/b.md').enabled).toEqual(['format/period-required']);
+    expect(of('docs/brand/c.md')).toEqual({ disabled: ['format/length', 'format/period-required'], enabled: [] });
+    expect(of('README.md')).toEqual(base);
+    expect(of('apps/docs/a.md')).toEqual(base);
+    expect(of()).toEqual(base);
+  });
+
+  it('上書きの誤りは失敗', () => {
+    const load = (overrides: unknown) => () => loadConfig(repo({ 'prose-lint.json': { overrides } }));
+    expect(load({})).toThrow('配列');
+    expect(load([{ rules: {} }])).toThrow('`files`');
+    expect(load([{ files: 'docs/**', rules: {} }])).toThrow('`files`');
+    expect(load([{ files: ['docs/**'] }])).toThrow('`rules`');
+    expect(load([{ files: ['docs/**'], rules: {}, ignores: [] }])).toThrow('未知のキー ignores');
+    expect(load([{ files: ['docs/**'], rules: { 'format/foo': true } }])).toThrow('overrides[0]: 未知の規則 format/foo');
+  });
+
   it('規則の無効化と許可語', () => {
     const { config } = loadConfig(repo({ 'prose-lint.json': { rules: { 'format/notation': false, 'format/period': true }, allow: ['読み物'] } }));
     const options = textOptions(config);

@@ -53,6 +53,11 @@ describe('Markdown の検査対象', () => {
     expect(markdownTexts(source).map((t) => t.text)).toEqual(['本文を作る', '手順', '最後']);
   });
 
+  it('見出しと表のセルを区別', () => {
+    const source = ['# 見出し', '下線の見出し', '===', '', '本文', '', '| 値 |', '- 手順'].join('\n');
+    expect(markdownTexts(source).map((t) => [t.text, t.block])).toEqual([['見出し', 'heading'], ['下線の見出し', 'heading'], ['===', undefined], ['本文', undefined], ['値', 'cell'], ['手順', undefined]]);
+  });
+
   it('引用・タスクのチェックボックス・表の区切り行', () => {
     const source = ['> 引用の文', '> > 入れ子', '- [ ] 未完了', '- [x] 完了', '| A | B |', '| :-- | --: |', '| 値 | 説明 |'].join('\n');
     expect(markdownTexts(source).map((t) => t.text)).toEqual(['引用の文', '入れ子', '未完了', '完了', 'A', 'B', '値', '説明']);
