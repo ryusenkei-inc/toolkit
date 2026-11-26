@@ -1,9 +1,13 @@
 import { ConfigError, err, ok, TransientError } from '@ryusenkei/core';
 import { validateMail, type Mail, type MailAddress, type Mailer } from '../mail/index.ts';
 
+// binding はオブジェクトの宛先に文字列の name を要する（ないと TypeError）。name のない宛先はアドレスの文字列で渡す
+type BindingAddress = string | { email: string; name: string };
+const bindingAddress = ({ email, name }: MailAddress): BindingAddress => (name ? { email, name } : email);
+
 /** Email Service の `send_email` binding（使う部分だけの型） */
 export type SendEmailBinding = {
-  send(message: { from: MailAddress; to: MailAddress[]; replyTo?: MailAddress; subject: string; text: string; html?: string }): Promise<{ messageId: string }>;
+  send(message: { from: BindingAddress; to: BindingAddress[]; replyTo?: BindingAddress; subject: string; text: string; html?: string }): Promise<{ messageId: string }>;
 };
 
 export type CloudflareMailerOptions = Readonly<{
@@ -29,7 +33,7 @@ export function cloudflareMailer(binding: SendEmailBinding | undefined, options:
       const valid = validateMail(mail);
       if (!valid.ok) return valid;
       try {
-        const { messageId } = await binding.send({ from: mail.from, to: mail.to, ...(mail.replyTo ? { replyTo: mail.replyTo } : {}), subject: mail.subject, text: mail.text, ...(mail.html ? { html: mail.html } : {}) });
+        const { messageId } = await binding.send({ from: bindingAddress(mail.from), to: mail.to.map(bindingAddress), ...(mail.replyTo ? { replyTo: bindingAddress(mail.replyTo) } : {}), subject: mail.subject, text: mail.text, ...(mail.html ? { html: mail.html } : {}) });
         return ok({ id: messageId });
       } catch (e) {
         const code = (e as { code?: unknown }).code;

@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.13.1
+
+### Fixed
+
+- `cloudflareMailer` passes an address without `name` to the `send_email` binding as the plain address string. The binding threw a `TypeError` for an address object without `name`.
+
 ## 0.13.0
 
 Webhook signing in the Standard Webhooks format. Existing code works unchanged.

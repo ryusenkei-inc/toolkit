@@ -56,6 +56,7 @@ const RELEASE_AGE = [
   'minimumReleaseAge: 2880',
   'minimumReleaseAgeExclude:',
   '  - "@ryusenkei/*"',
+  '  - "@tunasand/*"',
 ];
 
 /** 差分のあるファイル（`expected` が `null` = 削除、`undefined` = 自動で修正できない → `message` に対処） */
