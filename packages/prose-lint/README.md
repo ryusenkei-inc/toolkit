@@ -57,6 +57,7 @@ Generated files are skipped, and `--fix` leaves them unchanged. A file counts as
 | ID | Rule |
 | --- | --- |
 | `format/period` | No `。` at the end of a line |
+| `format/period-required` | The opposite of `format/period`: a Japanese line must end with `。`. Off by default; see [Requiring periods](#requiring-periods) |
 | `format/paren-width` | Full-width parentheses in Japanese text (use backticks for code) |
 | `format/colon` | Half-width colon (`キー: 値`) |
 | `format/spacing` | A space around words that contain letters, none around numbers (`D1 の上限`, `16人`) |
@@ -134,7 +135,8 @@ No configuration is needed. To change the defaults, use exactly one of these, re
   "extensions": ["ts", "astro"],
   "vocabulary": [{ "re": "同期ブロック", "to": "`synced_block`" }],
   "allow": ["サーバ管理"],
-  "rules": { "format/length": false }
+  "rules": { "format/length": false },
+  "overrides": [{ "files": ["docs/**/*.md"], "rules": { "format/period": false, "format/period-required": true } }]
 }
 ```
 
@@ -147,7 +149,40 @@ No configuration is needed. To change the defaults, use exactly one of these, re
 | `trailingFiles` | Files whose fields use aligned trailing comments (regular expression) | none |
 | `vocabulary` | Extra spellings `{ re, flags?, to }`, added to `format/notation` | none |
 | `allow` | Words excluded from `format/notation`, such as product names (regular expressions). Other rules still apply | none |
-| `rules` | Rule IDs to turn off (`false`) | all on |
+| `rules` | Rule IDs to turn off (`false`) or on (`true`) | all on except `format/period-required` |
+| `overrides` | Rules per path, as `{ files, rules }`. See [Overrides](#overrides) | none |
+
+### Overrides
+
+Each entry applies its `rules` on top of the top-level `rules` to the files that match any glob in `files`. Globs are matched against the path from the repository root with Node's [`path.matchesGlob`](https://nodejs.org/api/path.html#pathmatchesglobpath-pattern), so `*.md` matches only files in the root (use `**/*.md` for every directory). Wildcards don't match names that start with a dot; spell those out in the pattern.
+
+When several entries match a file, they apply in order, and the later one wins for the same rule. An override only changes rules. It doesn't add files to check, which is still up to `paths`, `docs`, `extensions`, and `skip`. Commit messages use the top-level `rules`.
+
+### Requiring periods
+
+To require periods in `docs/` but not in `docs/brand/`, and keep the default (no periods) everywhere else:
+
+```json
+{
+  "overrides": [
+    { "files": ["docs/**/*.md"], "rules": { "format/period": false, "format/period-required": true } },
+    { "files": ["docs/brand/**"], "rules": { "format/period": true, "format/period-required": false } }
+  ]
+}
+```
+
+Turning on `format/period-required` doesn't turn off `format/period`, so set both. The check is per line: a paragraph wrapped over several lines needs `。` at the end of each. `？`, `！`, `?`, and `!` also end a sentence, and closing brackets, quotes, and emphasis markers may follow.
+
+These lines don't need a period:
+
+- Headings and table cells
+- Code blocks, HTML comments, and front matter
+- Starlight aside fences (`:::note[Why]` and `:::`)
+- `key: value` lines, where the key has no `、` or `。` (including `**key:** value`)
+- Lines that end with a colon, such as the lead-in to a list
+- Lines without Japanese text outside backticks
+
+The rule never applies to commit messages.
 
 ## License
 

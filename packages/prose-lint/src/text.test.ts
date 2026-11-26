@@ -81,12 +81,40 @@ describe('文章の書式', () => {
   });
 });
 
+describe('句点ありの規則', () => {
+  const id = 'format/period-required';
+  const found = (t: string) => rules(t, { enabled: new Set([id]), disabled: new Set(['format/period']) }).filter((r) => r === id);
+
+  it('既定は無効', () => {
+    expect(rules('削除する')).toEqual([]);
+    expect(rules('削除する', { disabled: new Set(['format/period']) })).toEqual([]);
+  });
+
+  it('行末に句点がない文を検出', () => {
+    for (const t of ['削除する', '削除には `rm`', '設定する。`a` を使う', '削除する（公開済みを含む）', '詳しくは https://example.com を参照', '注意、次の点: 削除する', '時刻は 10:00']) expect(found(t)).toEqual([id]);
+  });
+
+  it('文の終わり（閉じ括弧・強調・改行の指定を含む）', () => {
+    for (const t of ['削除する。', '削除する（公開済みを含む。）', '「削除する。」', '**削除する。**', '削除する。  ', '削除する。\\', '削除する。<br>', '削除する？', '次のとおり:', '次のとおり：']) expect(found(t)).toEqual([]);
+  });
+
+  it('注記の行・「キー: 値」の行・日本語のない行は対象外', () => {
+    for (const t of [':::note[理由]', ':::', '  ::::tip[補足]', '担当: 運用', '期限: `5m`', '**対象:** 公開の記事', '**対象**: 公開の記事', '`pnpm test`', 'Run the tests']) expect(found(t)).toEqual([]);
+  });
+
+  it('コミットメッセージには適用しない', () => {
+    expect(commitMessageIssues('fix: 画像を更新', { enabled: new Set([id]) })).toEqual([]);
+  });
+});
+
 describe('修正の例', () => {
   for (const [id, [bad, good]] of Object.entries(EXAMPLES)) {
     it(id, () => {
-      const found = id.startsWith('commit/') ? commitMessageIssues(bad).flatMap((f) => f.issues) : commentIssues(bad);
+      // 句点ありの例は、句点なしの規則を無効にして判定
+      const options = id === 'format/period-required' ? { enabled: new Set([id]), disabled: new Set(['format/period']) } : {};
+      const found = id.startsWith('commit/') ? commitMessageIssues(bad).flatMap((f) => f.issues) : commentIssues(bad, options);
       expect(found.map((i) => i.rule)).toContain(id);
-      expect(id.startsWith('commit/') ? commitMessageIssues(good) : commentIssues(good)).toEqual([]);
+      expect(id.startsWith('commit/') ? commitMessageIssues(good) : commentIssues(good, options)).toEqual([]);
     });
   }
 });

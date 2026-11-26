@@ -1,5 +1,5 @@
 // 文章の判定: 書式の規則（format.ts）と表記の揺れ（notation.ts）を適用
-import { FORMAT_RULES } from './format.ts';
+import { FORMAT_RULES, OPT_IN_RULE_IDS } from './format.ts';
 import { NOTATION, notationRule } from './notation.ts';
 import { mask, type Issue, type Vocabulary } from './rule.ts';
 
@@ -7,6 +7,7 @@ export type Options = {
   vocabulary?: Vocabulary; // 表記の一覧（既定 = 共通の表記）
   allow?: RegExp[]; // 表記の判定から除外する語（ドメインの用語など）
   disabled?: ReadonlySet<string>; // 無効化する規則の ID
+  enabled?: ReadonlySet<string>; // 有効化する規則の ID（既定で無効の規則だけが対象）
 };
 
 // 規則の ID の一覧（設定の検証用・コミットの規則は commit.ts）
@@ -22,11 +23,12 @@ const code = /`[^`]*`/g;
 const global = (re: RegExp) => (re.flags.includes('g') ? re : new RegExp(re.source, `${re.flags}g`));
 
 export function textIssues(text: string, options: Options = {}): Issue[] {
-  const { vocabulary = NOTATION, allow = [], disabled = new Set() } = options;
+  const { vocabulary = NOTATION, allow = [], disabled = new Set(), enabled = new Set() } = options;
+  const on = (id: string) => !disabled.has(id) && (!OPT_IN_RULE_IDS.includes(id) || enabled.has(id));
   const prose = mask(text, code);
   const notationProse = allow.reduce((p, re) => mask(p, global(re)), prose);
   const issues: Issue[] = [];
-  for (const rule of FORMAT_RULES) if (!disabled.has(rule.id)) for (const message of rule.check(text, prose)) issues.push({ rule: rule.id, message });
+  for (const rule of FORMAT_RULES) if (on(rule.id)) for (const message of rule.check(text, prose)) issues.push({ rule: rule.id, message });
   const notation = notationRule(vocabulary);
   if (!disabled.has(notation.id)) for (const message of notation.check(text, notationProse)) issues.push({ rule: notation.id, message });
   return issues;

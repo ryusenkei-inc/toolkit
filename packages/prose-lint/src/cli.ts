@@ -65,7 +65,7 @@ const never = /(?!)/;
 const skip = config.skip ? new RegExp(config.skip) : never;
 const trailingFiles = config.trailingFiles ? new RegExp(config.trailingFiles) : never;
 const extension = new RegExp(`\\.(${config.extensions.join('|')})$`);
-const alignOn = !options.disabled.has('format/trailing-align');
+const alignOn = (file: string) => !textOptions(config, file).disabled.has('format/trailing-align');
 
 type Found = { where: string; text: string; issues: Issue[] };
 
@@ -73,8 +73,10 @@ type Found = { where: string; text: string; issues: Issue[] };
 function check(file: string, source: string): Found[] {
   const out: Found[] = [];
   const add = (line: number, text: string, issues: Issue[]) => void (issues.length && out.push({ where: `${file}:${line}`, text, issues }));
+  const options = textOptions(config, file);
   if (file.endsWith('.md')) {
-    for (const { line, text } of markdownTexts(source)) add(line, text, textIssues(text, options));
+    // 見出し・表のセルは文ではない → 既定で無効の規則（句点あり）は対象外
+    for (const { line, text, block } of markdownTexts(source)) add(line, text, textIssues(text, block ? { ...options, enabled: new Set() } : options));
     return out;
   }
   if (isGenerated(source)) return out;
@@ -85,7 +87,7 @@ function check(file: string, source: string): Found[] {
   const aligned = alignTrailing(lines);
   lines.forEach((line, i) => {
     const text = trailingComment(line)?.text;
-    if (text) add(i + 1, text, [...commentIssues(text, options), ...(alignOn && aligned[i] !== line ? [{ rule: 'format/trailing-align', message: '行末コメントの開始位置を統一' }] : [])]);
+    if (text) add(i + 1, text, [...commentIssues(text, options), ...(alignOn(file) && aligned[i] !== line ? [{ rule: 'format/trailing-align', message: '行末コメントの開始位置を統一' }] : [])]);
   });
   return out;
 }
@@ -125,7 +127,7 @@ for (const file of files) {
     const fixed = [...lines];
     // 同じ行の範囲は後ろから置換（前の範囲の位置を保つ）
     for (const s of commentTexts(source, commentKind(file)).reverse()) fixed[s.line - 1] = fixed[s.line - 1]!.slice(0, s.start) + fixSpacing(s.text) + fixed[s.line - 1]!.slice(s.end);
-    const result = trailingFiles.test(file) && alignOn ? alignTrailing(fixed, fixSpacing) : fixed;
+    const result = trailingFiles.test(file) && alignOn(file) ? alignTrailing(fixed, fixSpacing) : fixed;
     if (result.some((x, i) => x !== lines[i])) {
       source = result.join(source.includes('\r\n') ? '\r\n' : '\n');
       writeFileSync(file, source);

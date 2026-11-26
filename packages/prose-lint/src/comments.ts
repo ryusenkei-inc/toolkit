@@ -94,8 +94,11 @@ export function alignTrailing(lines: string[], fix: (text: string) => string = (
 }
 
 // Markdown の本文の判定単位: 段落・箇条書き・見出し・引用の行と表のセル
-export function markdownTexts(source: string): { line: number; text: string }[] {
-  const out: { line: number; text: string }[] = [];
+// `block` = 文ではない単位（見出し・表のセル）
+export type MarkdownText = { line: number; text: string; block?: 'heading' | 'cell' };
+
+export function markdownTexts(source: string): MarkdownText[] {
+  const out: MarkdownText[] = [];
   // 対象外: コードブロック（``` と ~~~・インデントされたもの）・HTML のコメント・先頭の front matter
   let fence = '';
   let comment = false;
@@ -116,9 +119,12 @@ export function markdownTexts(source: string): { line: number; text: string }[] 
       return;
     }
     // 見出し・箇条書き（タスクのチェックボックスを含む）の記号は除外
+    // 下線（`===`・`---`）の行が続く行も見出し
+    const heading = /^\s*#{1,6}\s/.test(l) || /^(=+|-+)\s*$/.test(lines[i + 1] ?? '');
+    const block = l.startsWith('|') ? 'cell' : heading ? 'heading' : undefined;
     const texts = l.startsWith('|') ? l.split(/(?<!\\)\|/).slice(1, -1).map((c) => c.trim()) : [l.replace(/^#+\s+|^\s*(?:[-*+]|\d+\.)\s+(?:\[[ xX]\]\s+)?/, '')];
     // リンクの URL 部分（`](...)`）と表の区切り行は判定対象外
-    for (const text of texts) if (text && !/^:?-+:?$/.test(text)) out.push({ line: i + 1, text: text.replace(/\[([^\]]*)\]\([^)]*\)/g, '$1') });
+    for (const text of texts) if (text && !/^:?-+:?$/.test(text)) out.push({ line: i + 1, text: text.replace(/\[([^\]]*)\]\([^)]*\)/g, '$1'), ...(block ? { block } : {}) });
   });
   return out;
 }
