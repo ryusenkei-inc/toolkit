@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.10.2
+
+- `minimumReleaseAgeExclude` in `pnpm-workspace.yaml` and the Dependabot `cooldown` and own-package group also cover `@tunasand/*`, the SDK of the product. `check` asks to update `minimumReleaseAgeExclude` until `sync` is run.
+
 ## 0.10.1
 
 - `runAffectedCheck` failed every step on Windows when `npm_execpath` pointed at a standalone `pnpm.exe` (it was started with `node`). It now starts `.js`, `.cjs`, and `.mjs` with `node`, and `.exe` directly.

@@ -48,7 +48,13 @@ describe('cloudflareMailer', () => {
   it('messageId を返し、binding に宛先と本文を渡す', async () => {
     const binding = fakeEmail();
     expect(await cloudflareMailer(binding).send(mail)).toEqual({ ok: true, value: { id: 'm-1' } });
-    expect(binding.sent).toEqual([{ from: mail.from, to: mail.to, subject: '件名', text: '本文' }]);
+    expect(binding.sent).toEqual([{ from: 'noreply@example.com', to: ['owner@example.com'], subject: '件名', text: '本文' }]);
+  });
+
+  it('name のある宛先はオブジェクト、ない宛先はアドレスの文字列で渡す', async () => {
+    const binding = fakeEmail();
+    await cloudflareMailer(binding).send({ ...mail, from: { email: 'noreply@example.com', name: '差出人' }, to: [{ email: 'a@example.com', name: 'A' }, { email: 'b@example.com' }], replyTo: { email: 'r@example.com' } });
+    expect(binding.sent).toEqual([{ from: { email: 'noreply@example.com', name: '差出人' }, to: [{ email: 'a@example.com', name: 'A' }, 'b@example.com'], replyTo: 'r@example.com', subject: '件名', text: '本文' }]);
   });
 
   it('送る前に検査し、ヘッダーの改行は送らずに invalid_input', async () => {
