@@ -36,7 +36,7 @@ importers:
   packages/conventions:
     dependencies:
       '@ryusenkei/prose-lint':
-        specifier: workspace:^0.3.0
+        specifier: workspace:^0.4.0
         version: link:../prose-lint
     devDependencies:
       '@types/node':
