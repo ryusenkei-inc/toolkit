@@ -10,7 +10,6 @@ import { join, matchesGlob } from 'node:path';
 import { COMMIT_RULE_IDS } from './commit.ts';
 import { NOTATION } from './notation.ts';
 import type { Vocabulary } from './rule.ts';
-import { OPT_IN_RULE_IDS } from './format.ts';
 import { TEXT_RULE_IDS, type Options } from './text.ts';
 
 export type Config = {
@@ -21,7 +20,7 @@ export type Config = {
   trailingFiles: string; // 1 フィールド 1 行・説明は行末コメントのファイル（正規表現。空 = なし）
   vocabulary: { re: string; flags?: string; to: string }[]; // リポ固有の表記（共通の表記に追加）
   allow: string[]; // 表記の判定から除外する語（正規表現。ドメインの用語など）
-  rules: Record<string, boolean>; // 規則の ID ごとの有効・無効（既定 = `OPT_IN_RULE_IDS` 以外は有効）
+  rules: Record<string, boolean>; // 規則の ID ごとの有効・無効（既定 = すべて有効）
   overrides: Override[]; // パスごとの規則の上書き
 };
 
@@ -85,12 +84,11 @@ export function loadConfig(dir = '.', explicit?: string): { config: Config; sour
   return { config, source: entry.source };
 }
 
-export function textOptions(config: Config, file?: string): Options & { vocabulary: Vocabulary; disabled: Set<string>; enabled: Set<string> } {
+export function textOptions(config: Config, file?: string): Options & { vocabulary: Vocabulary; disabled: Set<string> } {
   const rules = Object.entries(rulesFor(config, file));
   return {
     vocabulary: [...NOTATION, ...config.vocabulary.map((v) => ({ re: new RegExp(v.re, v.flags), to: v.to }))],
     allow: config.allow.map((re) => new RegExp(re, 'gu')),
     disabled: new Set(rules.filter(([, on]) => !on).map(([id]) => id)),
-    enabled: new Set(rules.filter(([id, on]) => on && OPT_IN_RULE_IDS.includes(id)).map(([id]) => id)),
   };
 }

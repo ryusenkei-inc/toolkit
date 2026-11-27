@@ -25,6 +25,7 @@
     "dist",
     "files",
     "rules*.md",
+    "style.md",
     "CHANGELOG.md"
   ],
   "engines": {

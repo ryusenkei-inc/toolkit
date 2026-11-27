@@ -5,6 +5,7 @@ Shared conventions for RYUSENKEI monorepos created from monorepo-template. Rules
 | Part | What it does |
 | --- | --- |
 | [`rules.md`](rules.md) | Rules for Claude Code, imported from each repository's `CLAUDE.md` (Japanese) |
+| [`style.md`](style.md) | Style guide for Japanese technical writing, imported by `rules.md` (Japanese) |
 | [`rules-ts.md`](rules-ts.md), [`rules-go.md`](rules-go.md), [`rules-rust.md`](rules-rust.md), [`rules-ui.md`](rules-ui.md) | Rules for one language or for UI code, imported only where they apply |
 | `dist/hook.js` | Claude Code hook: blocks tool calls that break the rules, and optionally runs lint and tests before Claude finishes |
 | `files/` | Master copies of the shared files, synced into each repository |

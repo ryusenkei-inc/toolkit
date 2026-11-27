@@ -5,7 +5,8 @@ const rules = (message: string, disabled: string[] = []) => commitMessageIssues(
 
 describe('コミットメッセージ', () => {
   it('type・scope を除いた subject を検査する', () => {
-    expect(commitMessageIssues('feat(site): OG 画像に和欧間のアキを追加する\n')).toEqual([]);
+    expect(commitMessageIssues('feat(site): OG画像に和欧間のアキを追加する\n')).toEqual([]);
+    expect(rules('feat(site): OG 画像を更新する')).toEqual(['1:format/spacing']);
     expect(commitMessageIssues('fix: 全てのファイルを削除する。')).toEqual([
       {
         line: 1,
@@ -19,10 +20,10 @@ describe('コミットメッセージ', () => {
   });
 
   it('Conventional Commits の書式', () => {
-    expect(rules('OG 画像を更新する')).toEqual(['1:commit/format']);
-    expect(rules('feature: OG 画像を更新する')).toEqual(['1:commit/format']);
-    expect(rules('feat(Site): OG 画像を更新する')).toEqual(['1:commit/format']);
-    expect(rules('feat(site,mcp)!: OG 画像を更新する')).toEqual([]);
+    expect(rules('OG画像を更新する')).toEqual(['1:commit/format']);
+    expect(rules('feature: OG画像を更新する')).toEqual(['1:commit/format']);
+    expect(rules('feat(Site): OG画像を更新する')).toEqual(['1:commit/format']);
+    expect(rules('feat(site,mcp)!: OG画像を更新する')).toEqual([]);
   });
 
   it('subject は日本語。バージョンを上げるだけのコミットは英語の定型', () => {

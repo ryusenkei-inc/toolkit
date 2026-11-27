@@ -35,22 +35,24 @@ describe('設定', () => {
     expect(() => loadConfig(repo({ 'prose-lint.json': { rules: { 'style/foo': false } } }))).toThrow('未知の規則 style/foo');
     // 0.2.0 で削除した文体の規則
     expect(() => loadConfig(repo({ 'prose-lint.json': { rules: { 'style/hedge': false } } }))).toThrow('未知の規則 style/hedge');
+    // 0.4.0 で format/period に統合した規則
+    expect(() => loadConfig(repo({ 'prose-lint.json': { rules: { 'format/period-required': true } } }))).toThrow('未知の規則 format/period-required');
   });
 
   it('上書きは一致するファイルだけに順に適用', () => {
     const overrides = [
-      { files: ['docs/**/*.md'], rules: { 'format/period': false, 'format/period-required': true } },
-      { files: ['docs/brand/**'], rules: { 'format/period': true, 'format/period-required': false } },
+      { files: ['docs/**/*.md'], rules: { 'format/period': false, 'format/spacing': false } },
+      { files: ['docs/brand/**'], rules: { 'format/period': true } },
     ];
     const { config } = loadConfig(repo({ 'prose-lint.json': { rules: { 'format/length': false }, overrides } }));
     const of = (file?: string) => {
-      const { disabled, enabled } = textOptions(config, file);
-      return { disabled: [...disabled].sort(), enabled: [...enabled] };
+      const { disabled } = textOptions(config, file);
+      return [...disabled].sort();
     };
-    const base = { disabled: ['format/length'], enabled: [] };
-    expect(of('docs/a.md')).toEqual({ disabled: ['format/length', 'format/period'], enabled: ['format/period-required'] });
-    expect(of('docs/guide/b.md').enabled).toEqual(['format/period-required']);
-    expect(of('docs/brand/c.md')).toEqual({ disabled: ['format/length', 'format/period-required'], enabled: [] });
+    const base = ['format/length'];
+    expect(of('docs/a.md')).toEqual(['format/length', 'format/period', 'format/spacing']);
+    expect(of('docs/guide/b.md')).toEqual(['format/length', 'format/period', 'format/spacing']);
+    expect(of('docs/brand/c.md')).toEqual(['format/length', 'format/spacing']);
     expect(of('README.md')).toEqual(base);
     expect(of('apps/docs/a.md')).toEqual(base);
     expect(of()).toEqual(base);

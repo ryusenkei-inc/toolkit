@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { EXAMPLES } from './examples.ts';
 import { commitMessageIssues } from './commit.ts';
-import { fixSpacing } from './format.ts';
+import { fixSpacing, removeSpacing } from './format.ts';
+import type { Kind } from './rule.ts';
 import { commentIssues, textIssues as issues } from './text.ts';
 
 const textIssues = (t: string) => issues(t).map((i) => i.message);
@@ -35,16 +36,14 @@ describe('文章の書式', () => {
       ['予め設定', '「予め」→ あらかじめ'],
       ['殆どの場合', '「殆ど」→ ほとんど'],
       ['既に登録済み', '「既に」→ すでに'],
-      ['README 等の文書', '「等」→ など'],
     ];
     for (const [text, issue] of cases) expect(textIssues(text)).toContain(issue);
-    for (const t of ['サーバーで実行', 'インターフェースの定義', 'ユーザーの設定', '同等の性能', '平等に扱う', '等しい値', '等幅フォント', '出来事の一覧']) expect(textIssues(t)).toEqual([]);
-    for (const [t, w] of [['出来れば', '出来れ'], ['出来ず', '出来ず'], ['次の様だ', 'の様だ'], ['A 等）', '等'], ['A 等と B', '等']] as const) expect(textIssues(t).some((i) => i.startsWith(`「${w}」`))).toBe(true);
+    for (const t of ['サーバーで実行', 'インターフェースの定義', 'ユーザーの設定', '出来事の一覧']) expect(textIssues(t)).toEqual([]);
+    for (const [t, w] of [['出来れば', '出来れ'], ['出来ず', '出来ず'], ['次の様だ', 'の様だ']] as const) expect(textIssues(t).some((i) => i.startsWith(`「${w}」`))).toBe(true);
   });
 
-  it('バージョンの意味の「版」だけを指摘する', () => {
-    for (const t of ['版を上げる', '同じ版に上書き', 'タグと版の一致', '最新の版を取得', '版ごとに記録']) expect(textIssues(t).some((i) => i.endsWith('→ バージョン'))).toBe(true);
-    for (const t of ['出版社の記事', '初版の発行', 'Web 版と iOS 版', '日本語版のドキュメント', '図版の差し替え', 'Web 版の違い', '言語版ごと', '出版番号', '最新版を取得']) expect(textIssues(t)).toEqual([]);
+  it('語の選択（版・等）は判定しない', () => {
+    for (const t of ['版を上げる', 'README 等の文書']) expect(textIssues(t)).toEqual([]);
   });
 
   it('構造の記号・URL・メールアドレスを詰めない', () => {
@@ -81,40 +80,72 @@ describe('文章の書式', () => {
   });
 });
 
-describe('句点ありの規則', () => {
-  const id = 'format/period-required';
-  const found = (t: string) => rules(t, { enabled: new Set([id]), disabled: new Set(['format/period']) }).filter((r) => r === id);
+describe('文の種類ごとの句点', () => {
+  const found = (t: string, kind: Kind) => rules(t, { kind }).filter((r) => r === 'format/period');
 
-  it('既定は無効', () => {
-    expect(rules('削除する')).toEqual([]);
-    expect(rules('削除する', { disabled: new Set(['format/period']) })).toEqual([]);
-  });
-
-  it('行末に句点がない文を検出', () => {
-    for (const t of ['削除する', '削除には `rm`', '設定する。`a` を使う', '削除する（公開済みを含む）', '詳しくは https://example.com を参照', '注意、次の点: 削除する', '時刻は 10:00']) expect(found(t)).toEqual([id]);
+  it('段落は句点が必要', () => {
+    for (const t of ['削除する', '削除には `rm`', '設定する。`a` を使う', '削除する（公開済みを含む）', '詳しくは https://example.com を参照', '注意、次の点: 削除する', '時刻は10:00']) expect(found(t, 'paragraph')).toEqual(['format/period']);
   });
 
   it('文の終わり（閉じ括弧・強調・改行の指定を含む）', () => {
-    for (const t of ['削除する。', '削除する（公開済みを含む。）', '「削除する。」', '**削除する。**', '削除する。  ', '削除する。\\', '削除する。<br>', '削除する？', '次のとおり:', '次のとおり：']) expect(found(t)).toEqual([]);
+    for (const t of ['削除する。', '削除する（公開済みを含む。）', '「削除する。」', '**削除する。**', '削除する。  ', '削除する。\\', '削除する。<br>', '削除する？', '次のとおり:', '次のとおり：']) expect(found(t, 'paragraph')).toEqual([]);
   });
 
-  it('注記の行・「キー: 値」の行・日本語のない行は対象外', () => {
-    for (const t of [':::note[理由]', ':::', '  ::::tip[補足]', '担当: 運用', '期限: `5m`', '**対象:** 公開の記事', '**対象**: 公開の記事', '`pnpm test`', 'Run the tests']) expect(found(t)).toEqual([]);
+  it('注記・HTML・「キー: 値」の行・日本語のない行は対象外', () => {
+    for (const t of [':::note[理由]', ':::', '  ::::tip[補足]', '<summary>詳細</summary>', '担当: 運用', '期限: `5m`', '**対象:** 公開の記事', '**対象**: 公開の記事', '`pnpm test`', 'Run the tests']) expect(found(t, 'paragraph')).toEqual([]);
   });
 
-  it('コミットメッセージには適用しない', () => {
-    expect(commitMessageIssues('fix: 画像を更新', { enabled: new Set([id]) })).toEqual([]);
+  it('箇条書きは判定しない', () => {
+    expect(found('削除する', 'item')).toEqual([]);
+    expect(found('削除する。', 'item')).toEqual([]);
+  });
+
+  it('コメント・コミット・見出し・表のセルは句点を付けない', () => {
+    for (const kind of ['comment', 'commit', 'heading', 'cell'] as const) {
+      expect(found('削除する。', kind)).toEqual(['format/period']);
+      expect(found('削除する', kind)).toEqual([]);
+    }
+  });
+});
+
+describe('文の種類ごとの和欧間のスペース', () => {
+  const found = (t: string, kind: Kind) => issues(t, { kind }).filter((i) => i.rule === 'format/spacing').map((i) => i.message);
+
+  it('コメントは英字を含む語の前後を空ける', () => {
+    expect(found('D1の上限', 'comment')).toEqual(['和欧間のスペース（英字を含む語だけ空け、数字だけの語は詰める）']);
+    expect(found('D1 の上限', 'comment')).toEqual([]);
+  });
+
+  it('文書・コミットは空けない', () => {
+    for (const kind of ['paragraph', 'item', 'heading', 'cell', 'commit'] as const) {
+      expect(found('D1 の上限', kind)).toEqual(['英単語と日本語の間に空白を入れない']);
+      expect(found('D1の上限', kind)).toEqual([]);
+    }
+  });
+
+  it('詰める範囲: 語・コード・リンク・強調の前後', () => {
+    const cases: [string, string][] = [
+      ['D1 の上限は 1 回', 'D1の上限は1回'],
+      ['`pnpm check` を通す', '`pnpm check`を通す'],
+      ['詳しくは [手順](https://example.com/a) を参照', '詳しくは[手順](https://example.com/a)を参照'],
+      ['**D1** の値', '**D1**の値'],
+      ['v0.2.0 で直す', 'v0.2.0で直す'],
+      ['GPT-5 の登場', 'GPT-5の登場'],
+    ];
+    for (const [input, expected] of cases) expect(removeSpacing(input)).toBe(expected);
+  });
+
+  it('URL・メールアドレスの前後・コードの中・構造の記号は変えない', () => {
+    for (const t of ['参照 https://example.com を見る', '宛先 dev@example.com に送る', '`a 日本`', '日本 - 説明', 'キー: 値', '値 -> 結果']) expect(removeSpacing(t)).toBe(t);
   });
 });
 
 describe('修正の例', () => {
-  for (const [id, [bad, good]] of Object.entries(EXAMPLES)) {
-    it(id, () => {
-      // 句点ありの例は、句点なしの規則を無効にして判定
-      const options = id === 'format/period-required' ? { enabled: new Set([id]), disabled: new Set(['format/period']) } : {};
-      const found = id.startsWith('commit/') ? commitMessageIssues(bad).flatMap((f) => f.issues) : commentIssues(bad, options);
-      expect(found.map((i) => i.rule)).toContain(id);
-      expect(id.startsWith('commit/') ? commitMessageIssues(good) : commentIssues(good, options)).toEqual([]);
+  const check = (text: string, kind: Kind) => (kind === 'commit' ? commitMessageIssues(text).flatMap((f) => f.issues) : kind === 'comment' ? commentIssues(text) : issues(text, { kind }));
+  for (const e of EXAMPLES) {
+    it(`${e.rule}（${e.kind}）`, () => {
+      expect(check(e.bad, e.kind).some((i) => i.rule === e.rule && (e.message === undefined || i.message === e.message))).toBe(true);
+      expect(check(e.good, e.kind)).toEqual([]);
     });
   }
 });

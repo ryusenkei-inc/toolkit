@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.11.0
+
+- `style.md`: the style guide for Japanese technical writing (vocabulary, tone, format, and notation). `rules.md` imports it, so repositories that import `rules.md` need no change.
+- Depends on `@ryusenkei/prose-lint` 0.4. The PR title check in the hook now rejects a space between Japanese and alphanumeric words, as commit messages do.
+
+| Before | After |
+| --- | --- |
+| Vocabulary, tone, and tables under 書き方 in `rules.md` | Moved to `style.md`. 体言止め is allowed in list items and table cells |
+| The rule on errors, logs, and standard output under 書き方 | Moved to コード in `rules.md`, unchanged |
+| PR titles with a space between Japanese and alphanumeric words (`OG 画像`) | No space (`OG画像`) |
+
 ## 0.10.3
 
 - Depends on `@ryusenkei/prose-lint` 0.3. The PR title check in the hook reads the repository's `prose-lint.json` with this copy, and 0.2 rejects the new `overrides` key.
