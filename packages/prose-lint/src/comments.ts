@@ -94,8 +94,12 @@ export function alignTrailing(lines: string[], fix: (text: string) => string = (
 }
 
 // Markdown の本文の判定単位: 段落・箇条書き・見出し・引用の行と表のセル
-// `block` = 文ではない単位（見出し・表のセル）
-export type MarkdownText = { line: number; text: string; block?: 'heading' | 'cell' };
+// `kind` = 句点の規則の区別（段落・引用 = paragraph、箇条書きとその継続の行 = item）
+export type MarkdownKind = 'paragraph' | 'item' | 'heading' | 'cell';
+export type MarkdownText = { line: number; text: string; kind: MarkdownKind };
+
+// 箇条書きの記号（タスクのチェックボックスを含む）
+const ITEM = /^\s*(?:[-*+]|\d+\.)\s+(?:\[[ xX]\]\s+)?/;
 
 export function markdownTexts(source: string): MarkdownText[] {
   const out: MarkdownText[] = [];
@@ -118,13 +122,16 @@ export function markdownTexts(source: string): MarkdownText[] {
       comment = !l.includes('-->');
       return;
     }
-    // 見出し・箇条書き（タスクのチェックボックスを含む）の記号は除外
     // 下線（`===`・`---`）の行が続く行も見出し
+    // 字下げした行は箇条書きの継続
     const heading = /^\s*#{1,6}\s/.test(l) || /^(=+|-+)\s*$/.test(lines[i + 1] ?? '');
-    const block = l.startsWith('|') ? 'cell' : heading ? 'heading' : undefined;
-    const texts = l.startsWith('|') ? l.split(/(?<!\\)\|/).slice(1, -1).map((c) => c.trim()) : [l.replace(/^#+\s+|^\s*(?:[-*+]|\d+\.)\s+(?:\[[ xX]\]\s+)?/, '')];
-    // リンクの URL 部分（`](...)`）と表の区切り行は判定対象外
-    for (const text of texts) if (text && !/^:?-+:?$/.test(text)) out.push({ line: i + 1, text: text.replace(/\[([^\]]*)\]\([^)]*\)/g, '$1'), ...(block ? { block } : {}) });
+    const kind: MarkdownKind = l.startsWith('|') ? 'cell' : heading ? 'heading' : ITEM.test(l) || /^\s/.test(l) ? 'item' : 'paragraph';
+    const texts = kind === 'cell' ? l.split(/(?<!\\)\|/).slice(1, -1).map((c) => c.trim()) : [l.replace(/^#+\s+/, '').replace(ITEM, '').trim()];
+    // 画像は除外、リンクは文字の部分だけ判定。表の区切り行は判定対象外
+    for (const t of texts) {
+      const text = t.replace(/!\[[^\]]*\]\([^)]*\)/g, '').replace(/\[([^\]]*)\]\([^)]*\)/g, '$1').trim();
+      if (text && !/^:?-+:?$/.test(text)) out.push({ line: i + 1, text, kind });
+    }
   });
   return out;
 }

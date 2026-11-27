@@ -4,8 +4,8 @@
 //   prose-lint [paths...] [--summary] [--fix] [--config <file>]
 //   prose-lint --commit-msg <file>  コミットメッセージの検査（commit-msg フック）
 //   prose-lint --hook               編集したファイルの検査（Claude Code の PostToolUse フック）
-//   --fix: コメントの和欧間のスペースと、行末コメントの開始位置だけ自動修正
-//     対象外: Markdown・表記 → 文脈の判断が必要
+//   --fix: 和欧間のスペース・行末コメントの開始位置・Markdown の段落の句点だけ自動修正
+//     対象外: 表記・括弧・コロン → 文脈の判断が必要
 // 設定 = config.ts
 // パスはリポのルートからの相対で判定
 import { execFileSync } from 'node:child_process';
@@ -16,6 +16,7 @@ import { commitMessageIssues } from './commit.ts';
 import { alignTrailing, commentKind, commentTexts, isGenerated, markdownTexts, trailingComment } from './comments.ts';
 import { loadConfig, textOptions } from './config.ts';
 import { examplesFor } from './examples.ts';
+import { fixMarkdown } from './fix.ts';
 import { fixSpacing } from './format.ts';
 import type { Issue } from './rule.ts';
 import { commentIssues, textIssues } from './text.ts';
@@ -50,7 +51,7 @@ const options = textOptions(config);
 const format = (issues: Issue[]) => issues.map((i) => `${i.message} [${i.rule}]`).join(' / ');
 // 修正の例（指摘のあった規則の分だけ）
 const guide = (found: { issues: Issue[] }[]) => {
-  const examples = examplesFor(found.flatMap((f) => f.issues.map((i) => i.rule)));
+  const examples = examplesFor(found.flatMap((f) => f.issues));
   return examples.length ? ['修正の例:', ...examples.map((e) => `  ${e}`)] : [];
 };
 
@@ -75,8 +76,7 @@ function check(file: string, source: string): Found[] {
   const add = (line: number, text: string, issues: Issue[]) => void (issues.length && out.push({ where: `${file}:${line}`, text, issues }));
   const options = textOptions(config, file);
   if (file.endsWith('.md')) {
-    // 見出し・表のセルは文ではない → 既定で無効の規則（句点あり）は対象外
-    for (const { line, text, block } of markdownTexts(source)) add(line, text, textIssues(text, block ? { ...options, enabled: new Set() } : options));
+    for (const { line, text, kind } of markdownTexts(source)) add(line, text, textIssues(text, { ...options, kind }));
     return out;
   }
   if (isGenerated(source)) return out;
@@ -135,7 +135,15 @@ for (const file of files) {
   }
   found.push(...check(file, source));
 }
-for (const file of docs) found.push(...check(file, readFileSync(file, 'utf8')));
+for (const file of docs) {
+  let source = readFileSync(file, 'utf8');
+  if (values.fix) {
+    const { disabled } = textOptions(config, file);
+    const fixed = fixMarkdown(source, { spacing: !disabled.has('format/spacing'), period: !disabled.has('format/period') });
+    if (fixed !== source) writeFileSync(file, (source = fixed));
+  }
+  found.push(...check(file, source));
+}
 
 if (values.summary) {
   const counts = new Map<string, number>();
