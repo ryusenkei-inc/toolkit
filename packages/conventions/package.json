@@ -43,7 +43,7 @@
     "@ryusenkei/prose-lint": "workspace:^0.3.0"
   },
   "devDependencies": {
-    "@types/node": "^26.6.1",
+    "@types/node": "^26.6.7",
     "typescript": "^5.9.3"
   },
   "peerDependencies": {
